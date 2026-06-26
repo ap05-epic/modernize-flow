@@ -15,7 +15,8 @@ comes from these contracts.
 
 The **mainframe** data enters through the WS/feign layer (and, where a CICS program backs it, through the
 CICS COMMAREA / DB2 declarations — see the team's `cics-analysis` agent if COBOL/BMS source is available).
-You do **not** call the mainframe to render — the captured fixture stands in for it.
+You do **not** call the mainframe to render — in record mode the REAL recorded response (HAR) stands in for
+it; in live mode the Vite proxy reaches the real backend through this layer.
 
 ## How to trace one screen
 

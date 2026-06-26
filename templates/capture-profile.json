@@ -1,13 +1,16 @@
 {
   "_schema": {
     "purpose": "A per-screen CAPTURE CONTRACT: how to deterministically reach and capture one legacy screen so the evidence is real (usable, not just 'rendered'). The analyzer writes one of these per screen; capture_screen.py reads it with --profile; the BUILDER reuses the SAME profile to capture the React side, guaranteeing comparable captures.",
-    "consumed_by_capture_screen": ["url", "viewport", "workflow", "waitFor", "mustContain", "waitForGone", "waitMs"],
-    "documentation_only": ["id", "screen", "canonicalRoute", "authContext", "expectedAssets", "knownFailureModes", "notes"],
+    "consumed_by_capture_screen": ["url", "viewport", "workflow", "waitFor", "mustContain", "waitForGone", "waitMs", "recordHar", "errorSignatures"],
+    "documentation_only": ["id", "screen", "canonicalRoute", "authContext", "expectedAssets", "knownFailureModes", "notes", "dataMode"],
     "rules": [
       "Prefer semantic readiness (waitFor + mustContain + waitForGone) over a big waitMs; waitMs is the LAST small settle, not the strategy.",
       "Record the canonical route AND the misleading routes (e.g. a direct *.do that shows an error page).",
       "workflow may be an inline list of steps (navigate/click/fill/select/wait) OR a path to a steps JSON.",
-      "Use the same profile (minus url) for the legacy and react captures."
+      "Use the same profile (minus url) for the legacy and react captures.",
+      "recordHar:true records the REAL backend responses (responses.har) for record-mode replay (no fake data).",
+      "errorSignatures[] = text that marks a wrong/error page; a hit QUARANTINES the capture to _rejected/ instead of promoting it.",
+      "dataMode (record|live) tells the builder how this view's React side gets real data; capture itself ignores it."
     ]
   },
 
@@ -39,6 +42,9 @@
       "mustContain": ["Compensation", "FA Profile"],
       "waitForGone": ".loadingMask",
       "waitMs": 8000,
+      "recordHar": true,
+      "dataMode": "record",
+      "errorSignatures": ["HTTP Status 500", "session expired", "loginAction.do"],
       "expectedAssets": ["/BAA/theme/", "/BAA/platform/styleSheets/"],
       "knownFailureModes": [
         "Opening dispatcherAction.do WITHOUT a live logged-in session shows the login/error route, not the summary.",

@@ -23,8 +23,9 @@ jsp2react/
 ├── skills/
 │   ├── legacy-crawl-capture/
 │   │   ├── SKILL.md
-│   │   ├── scripts/{crawl_screens.py, capture_screen.py, capture_fixtures.py}
-│   │   └── references/{struts-jsp-endpoint-mapping.md, runtime-readiness-and-auth.md}
+│   │   ├── scripts/{extract_jsp.py, crawl_ajax.py, crawl_screens.py, capture_screen.py, capture_fixtures.py}
+│   │   └── references/{jsp-source-extraction.md, ajax-crawl-and-viewgraph.md,
+│   │                   struts-jsp-endpoint-mapping.md, runtime-readiness-and-auth.md}
 │   ├── parity-verify/
 │   │   ├── SKILL.md
 │   │   ├── package.json          # declares pixelmatch + pngjs (install.sh runs `npm install` here)
@@ -32,8 +33,8 @@ jsp2react/
 │   │   └── references/parity-thresholds.md
 │   └── react-replica-kit/
 │       ├── SKILL.md
-│       ├── scripts/{scaffold_app.sh, serve_review.py}
-│       └── references/{jsp-to-react-mapping.md, css-porting.md}
+│       ├── scripts/{extract_theme.py, scaffold_app.sh, build_index.py, serve_review.py}
+│       └── references/{jsp-to-react-mapping.md, css-porting.md, theme-extraction.md, backend-data-modes.md}
 └── templates/{STATUS.md, spec.md, MANIFEST.json, capture-profile.json}
 ```
 
@@ -67,8 +68,13 @@ All MIT. The pod can pull these from GitHub/npm; here is exactly what and from w
 |---|---|---|---|
 | `pixelmatch` | github.com/mapbox/pixelmatch | `npm i -D pixelmatch@^5.3.0` | `parity-verify/scripts/pixel_diff.js` |
 | `pngjs` | github.com/lukeapage/pngjs | `npm i -D pngjs@^7.0.0` | `parity-verify/scripts/pixel_diff.js` |
-| `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (fixture rendering) |
+| `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (record-mode HAR replay) |
 | Vite + React + TS | github.com/vitejs/vite | `npm create vite@latest <app> -- --template react-ts` | `react-replica-kit/scripts/scaffold_app.sh` (runs this for you) |
+| **Crawljax** (OPTIONAL) | github.com/crawljax/crawljax (Apache-2.0) | download the jar/CLI; run separately | exhaustive AJAX state-graph discovery, normalized into `viewgraph.json` (see ajax-crawl-and-viewgraph.md). The built-in `crawl_ajax.py` already covers this — Crawljax is a booster, not required. |
+
+> `extract_jsp.py`, `extract_theme.py`, `crawl_ajax.py`, `build_index.py` are **stdlib Python** (Playwright
+> for the crawler, already on the pod) — no extra installs. `css-tree` is an OPTIONAL upgrade for theme
+> extraction; the stdlib harvester is the default and needs nothing.
 
 ### Nothing ships in the repo — `node_modules` is git‑ignored. Install on the pod:
 
@@ -118,51 +124,61 @@ operator check using the scripts directly; the **autonomous run is §6b** (you j
 URL). Skip to §6b if you'd rather let Copilot do it.
 
 ```bash
-# 0. sanity: every script answers --help / --self-check without a browser
-python ~/.copilot/skills/legacy-crawl-capture/scripts/crawl_screens.py --self-check
-python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py --self-check
-python ~/.copilot/skills/parity-verify/scripts/dom_diff.py --self-check
-node   ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check          # needs pixelmatch+pngjs
+S=~/.copilot/skills
+# 0. sanity: every script answers --self-check without a browser
+python $S/legacy-crawl-capture/scripts/extract_jsp.py --self-check
+python $S/legacy-crawl-capture/scripts/crawl_ajax.py --self-check
+python $S/legacy-crawl-capture/scripts/crawl_screens.py --self-check
+python $S/legacy-crawl-capture/scripts/capture_screen.py --self-check
+python $S/react-replica-kit/scripts/extract_theme.py --self-check
+python $S/react-replica-kit/scripts/build_index.py --self-check
+python $S/parity-verify/scripts/dom_diff.py --self-check
+node   $S/parity-verify/scripts/pixel_diff.js --self-check          # needs pixelmatch+pngjs
 
-# 1. login once  (login skill — produces the session everything reuses)
-python ~/.copilot/skills/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json
+# 1. login once (login skill — the session everything reuses)
+python $S/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json
 
-# 2. discover screens (deterministic inventory)
-python ~/.copilot/skills/legacy-crawl-capture/scripts/crawl_screens.py \
-  --struts-config <…>/WEB-INF/struts-config.xml --webapp-dir <…>/webapp --out work/screens.json
+# 2. EXTRACT THE THEME from the legacy CSS source (colors/fonts come from here)
+python $S/react-replica-kit/scripts/extract_theme.py \
+  --css-dir <webapp>/theme --css-dir <webapp>/platform/styleSheets --out-dir work/evidence/theme
 
-# 3. capture ONE legacy screen — with SEMANTIC READINESS so the capture is USABLE, not just "rendered".
-#    Readiness order: --wait-for selector -> --must-contain text -> --wait-for-gone spinner -> small --wait-ms.
-#    Check the <name>.capture.json sidecar: "usable": true means readiness passed AND no CSS/JS 404.
-#    (Or pass --profile work/profiles/f010.json — a reusable capture contract; see templates/capture-profile.json.)
-python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py \
-  --url <screen-url> --out-dir work/screenshots --name f010_default \
-  --auth-state work/auth_state.json --viewport 1920x1080 \
-  --wait-for "#pmenu" --must-contain "Compensation" --wait-for-gone ".loadingMask" --wait-ms 8000
-# Why each flag / localhost+auth+timing troubleshooting:
-#   ~/.copilot/skills/legacy-crawl-capture/references/runtime-readiness-and-auth.md
+# 3. DISCOVER views: static + AJAX (from the start), reconciled into one viewgraph
+python $S/legacy-crawl-capture/scripts/crawl_screens.py --struts-config <…>/WEB-INF/struts-config.xml \
+  --webapp-dir <webapp> --out work/screens.json --emit-viewgraph work/static-viewgraph.json
+python $S/legacy-crawl-capture/scripts/crawl_ajax.py --start-url <post-login summary> \
+  --auth-state work/auth_state.json --merge work/static-viewgraph.json --out work/evidence/viewgraph.json
 
-# 4. fixtures + scaffold the app
-python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_fixtures.py \
-  --network work/screenshots/f010_default.network.json --out <app>/src/mocks/f010
-bash   ~/.copilot/skills/react-replica-kit/scripts/scaffold_app.sh <app>     # if not scaffolded yet
+# 4. PARSE one view's JSP into its source model (the BUILD INPUT)
+python $S/legacy-crawl-capture/scripts/extract_jsp.py --jsp <webapp>/jsp/fateamprofile.jsp \
+  --webapp-dir <webapp> --out work/evidence/f010_default/source-model.json
 
-# 5. (builder builds src/screens/F010, runs `npm run dev`, then captures the react side)
-#    REUSE the same readiness (viewport + must-contain text + settle) so both captures are comparable.
-#    The Dojo ".loadingMask" won't exist in React — skip just that mechanical check with --wait-for-gone "".
-python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py \
-  --url http://localhost:5173/#/f010 --out-dir work/react --name f010_default --viewport 1920x1080 \
-  --wait-for "#root" --must-contain "Compensation" --wait-for-gone "" --wait-ms 8000
+# 5. CAPTURE that view (real responses via --record-har; error pages auto-quarantine to _rejected/)
+python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/f010_default.json \
+  --url <screen-url> --out-dir work/evidence/f010_default --name legacy --auth-state work/auth_state.json --record-har
+#   (profile.workflow = the from-start click-path from viewgraph; readiness: waitFor/mustContain/waitForGone.)
+#   Check work/evidence/f010_default/legacy.capture.json -> "usable": true. Runbook: references/runtime-readiness-and-auth.md
 
-# 6. PROVE parity
-python ~/.copilot/skills/parity-verify/scripts/verify_screen.py \
-  --legacy-model work/screenshots/f010_default.model.json --legacy-png work/screenshots/f010_default.png \
-  --react-model  work/react/f010_default.model.json       --react-png  work/react/f010_default.png \
-  --out-dir work/parity --name f010_default --pixel-threshold 0.005
-# exit 0 = PASS. Read work/parity/f010_default.parity-report.md for concrete deltas if it FAILS.
+# 6. REAL data (record mode) + scaffold the app WITH the theme
+python $S/legacy-crawl-capture/scripts/capture_fixtures.py \
+  --har work/evidence/f010_default/legacy.har --out <app>/src/mocks/f010_default
+bash $S/react-replica-kit/scripts/scaffold_app.sh <app> work/evidence/theme/theme.css   # once
 
-# review
-python ~/.copilot/skills/react-replica-kit/scripts/serve_review.py --work-dir work --react-base-url http://localhost:5173
+# 7. (builder builds src/screens/F010 FROM source-model.json + theme tokens, runs `npm run dev`,
+#     then captures the react side with the SAME profile — only the URL changes)
+python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/f010_default.json \
+  --url http://localhost:5173/#/f010_default --out-dir work/evidence/f010_default --name react \
+  --wait-for "#root" --wait-for-gone ""     # adapt only mechanical selectors; keep viewport+mustContain
+
+# 8. PROVE parity (record = exact pixels; live = structure/style+data)
+python $S/parity-verify/scripts/verify_screen.py \
+  --legacy-model work/evidence/f010_default/legacy.model.json --legacy-png work/evidence/f010_default/legacy.png \
+  --react-model  work/evidence/f010_default/react.model.json  --react-png  work/evidence/f010_default/react.png \
+  --out-dir work/evidence/f010_default/parity --name f010_default --data-mode record --pixel-threshold 0.005
+# exit 0 = PASS. Read .../parity/f010_default.parity-report.md for concrete deltas if it FAILS.
+
+# 9. INDEX + review (the navigable human entry point)
+python $S/react-replica-kit/scripts/build_index.py --manifest work/evidence/MANIFEST.json   # -> work/evidence/INDEX.html
+python $S/react-replica-kit/scripts/serve_review.py --work-dir work/evidence --react-base-url http://localhost:5173
 ```
 
 ## 6b. What to type into Copilot (after the files are placed)
@@ -175,23 +191,28 @@ agents (by name / trigger phrase). Suggested prompts:
 > jsp2react agents are discoverable, then run the §6 self-checks (`--self-check` / `--help`) and report
 > results. Don't crawl anything yet."
 
-**Step B — analyze (run once; it builds the contract for ALL screens). You give it only the URL + login:**
+**Step B — analyze (run once; builds the SOURCE-DRIVEN contract for ALL views). You give only the URL + login:**
 > "Use the **jsp2react-analyzer** agent. Legacy app URL = `<…>`. Log in via
-> webapp-snapshot/save_auth_state.py (creds/auth_state at `<…>`). The legacy source is at `<…>` *(omit this
-> line to let it discover the source)*. **Bootstrap STATUS.md yourself**, then log in, **run pre-capture
-> triage (app reachable, auth end-to-end, canonical post-login route, assets 200, one data-heavy page
-> actually hydrates) before mass capture**, then crawl and capture every screen (write a capture profile
-> per screen; a capture counts only when its `.capture.json` says `usable:true`), map each screen's
-> endpoints, generate MSW fixtures, and write spec.md + STATUS.md + MANIFEST.json. Begin with the shell +
-> one family, then continue across all families until the coverage matrix is met."
+> webapp-snapshot/save_auth_state.py (creds/auth_state at `<…>`). The legacy source is at `<…>` *(omit to
+> let it discover the source)*. **Bootstrap STATUS.md yourself**, then: run pre-capture triage; **extract the
+> theme** from the legacy CSS (extract_theme.py); **discover every view including AJAX views** (crawl_screens
+> --emit-viewgraph + crawl_ajax from the start → viewgraph.json — never open deep links directly); for each
+> view **parse its JSP into source-model.json** (extract_jsp.py), capture evidence + the **REAL responses**
+> (capture_screen --record-har; error pages auto-quarantine — look around again, don't accept them), and for
+> record-mode views build replay handlers from the HAR. Write spec.md (source models + capture contracts) +
+> STATUS.md + MANIFEST.json, then build_index → evidence/INDEX.html. Begin with the shell + one family, then
+> continue across all families until the coverage matrix is met."
 
 That's the whole human input: the **URL** and **how to log in** (source path optional). The analyzer
 discovers/derives everything else into STATUS.md — you never hand-edit it.
 
-**Step C — build (run repeatedly; one screen per turn):**
-> "Use the **jsp2react-builder** agent. Read STATUS.md and implement the next screen end to end: port it
-> 1:1, wire its MSW fixtures, render it, run parity-verify, and fix from the parity report until it
-> PASSES, then update STATUS.md. Do one screen, then show me its parity-report.md and side-by-side.png."
+**Step C — build (run repeatedly; one view per turn):**
+> "Use the **jsp2react-builder** agent. Read STATUS.md and implement the next view end to end: build it 1:1
+> **from its source-model.json + the theme tokens** (structure/labels/colors from source, screenshot only to
+> verify), wire **real data** for its data_mode (record = HAR replay / live = Vite proxy), render it, capture
+> with the same profile, run parity-verify --data-mode, and fix from the parity report until it PASSES; then
+> update STATUS.md and regenerate INDEX.html. Build the Login screen (F000) first. Do one view, then show me
+> its parity-report.md and side-by-side.png."
 
 Then simply: **"Continue with the next screen."** (repeat) — or, once you trust it,
 **"Implement all remaining screens, verifying each before moving on; stop and tell me about any blocker."**
@@ -207,10 +228,12 @@ Then simply: **"Continue with the next screen."** (repeat) — or, once you trus
 2. The legacy source (incl. `struts-config*.xml`, `.properties`) is readable; set its path in `STATUS.md`.
 3. Login can yield a reusable `auth_state.json` (one manual SSO step may be needed — it's a pre‑step, not
    part of the agent loop).
-4. Mainframe data is reached via WS/feign; **no live mainframe call is needed to render** (fixtures cover
-   it). Use the team's `cics-analysis` agent for COMMAREA/DB2 contracts only if that source is in scope.
-5. Pixel‑exact JSP↔React isn't realistic; the gate is **strict structural + thresholded pixel**. Tune
-   `--pixel-threshold` per screen in `STATUS.md §3` (see `parity-thresholds.md`), never the structural gate.
+4. Data is REAL in both modes: **record** replays the responses recorded to HAR at capture time (no live
+   backend needed to render); **live** proxies the real backend (needs it running + a session). Never
+   hand-author data. Use `cics-analysis` for COMMAREA/DB2 contracts only if that source is in scope.
+5. Pixel‑exact JSP↔React isn't realistic; the gate is **strict structural + data-presence + (record) pixel /
+   (live) style**. Tune `--pixel-threshold` per view in `STATUS.md §3` (parity-thresholds.md); never relax
+   the structural gate. `--data-mode` selects record (exact pixels) vs live (pixels advisory).
 6. Script CLIs here are the contract; if a reused pod skill's flags differ (OCR drift), run it with
    `--help` and adjust — the agents are told to do this.
 

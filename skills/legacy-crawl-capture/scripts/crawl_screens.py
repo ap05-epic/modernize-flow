@@ -136,6 +136,7 @@ def main():
     ap.add_argument("--struts-config", nargs="*", default=[], help="One or more struts-config*.xml paths.")
     ap.add_argument("--webapp-dir", help="Legacy webapp dir to scan for JSPs/links.")
     ap.add_argument("--out", default="screens.json", help="Output JSON path.")
+    ap.add_argument("--emit-viewgraph", help="Also write a viewgraph.json of the static routes (folds into crawl_ajax.py --merge for one reconciled inventory).")
     ap.add_argument("--runtime-url", help="Optional: start URL for a live BFS link harvest.")
     ap.add_argument("--auth-state", help="storage_state json for the runtime harvest.")
     ap.add_argument("--max-pages", type=int, default=60, help="Runtime BFS page cap.")
@@ -185,7 +186,23 @@ def main():
         },
     }
     json.dump(out, open(args.out, "w", encoding="utf-8"), indent=1)
-    print(json.dumps({"ok": True, "out": args.out, **out["reconciliation"], "families": fams}, indent=1))
+
+    if args.emit_viewgraph:
+        # static routes as viewgraph states (domSignature 'static:<route>' so they never collide with
+        # the AJAX crawler's DOM-hash sigs — purely additive when reconciled via crawl_ajax.py --merge).
+        states = []
+        for a in actions:
+            route = a.get("action_do", "")
+            states.append({"id": "s_" + route, "domSignature": "static:" + route,
+                           "clickPathFromStart": [{"action": "navigate", "url": route}],
+                           "triggeredEndpoints": [], "isError": False, "label": route,
+                           "family": a.get("family", ""), "jsp": a.get("forwards", {}).get("success", "")})
+        json.dump({"start_url": args.runtime_url or "", "count": len(states), "errors": 0,
+                   "states": states, "source": "crawl_screens.py (static)"},
+                  open(args.emit_viewgraph, "w", encoding="utf-8"), indent=1)
+
+    print(json.dumps({"ok": True, "out": args.out, **out["reconciliation"], "families": fams,
+                      "viewgraph": args.emit_viewgraph or None}, indent=1))
 
 
 if __name__ == "__main__":

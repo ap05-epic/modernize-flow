@@ -1,44 +1,30 @@
 {
   "_schema": {
-    "purpose": "Auto-maintained ledger of every captured artifact, keyed by screen+state. Makes traceability automatic instead of hand-listed. Written by legacy-crawl-capture scripts; parity fields updated by parity-verify; read by both agents to know what evidence exists.",
+    "purpose": "Auto-maintained ledger of every view's evidence, ONE ENTRY PER VIEW (per-view folder). Drives evidence/INDEX.html (build_index.py) and tells both agents what evidence exists and its parity verdict. v2: per-view folders replace the old by-type folders so a human can actually follow one view's files.",
     "invariants": [
-      "Every file under the evidence root (screenshots/, dom/, fixtures/, parity/) appears in exactly one entry.",
-      "Every screen in STATUS.md §4 with status >= 'analyzed' has an entry here.",
-      "sha256 lets a re-run detect changed captures; absent file or mismatch => re-capture."
+      "One folder per view at evidence/<folder>/ holding legacy.* and react.* plus source-model.json, nav-path.json, parity/.",
+      "Every view in STATUS.md with status >= 'analyzed' has an entry here; quarantined error captures are listed in 'rejected', NOT promoted as evidence.",
+      "sha256 (in each capture.json) lets a re-run detect changed captures."
     ],
-    "screen_entry_shape": {
-      "id": "F0xx (matches STATUS.md / spec.md)",
-      "family": "shell|fa|cefs|latam|nnm|shhp|contentlet|ipad|...",
-      "screen": "human name",
-      "route": "legacy action/url, e.g. fateamprofile.do",
-      "reach_path": "runtime steps to navigate here (mirrors spec.md)",
-      "states": [
-        {
-          "state": "default|empty|error|tab:<name>|modal:<name>|...",
-          "viewport": "1920x1080",
-          "captured_at": "ISO-8601 (stamped by the script at run time)",
-          "artifacts": {
-            "screenshot": "screenshots/f0xx_default.png",
-            "dom": "dom/f0xx_default.dom.html",
-            "computed": "dom/f0xx_default.computed.json",
-            "a11y": "dom/f0xx_default.a11y.json",
-            "network": "fixtures/f0xx_default.network.json",
-            "fixture": "fixtures/f0xx_default.fixture.json"
-          },
-          "sha256": { "screenshot": "<hex>", "dom": "<hex>" },
-          "endpoints": [
-            { "method": "GET", "path": "/BAA/fateamprofile.do", "layer": "struts", "fixture_key": "fateamprofile" }
-          ],
-          "parity": {
-            "status": "not-run|fail|pass",
-            "report": "parity/f0xx_default.parity-report.json",
-            "side_by_side": "parity/f0xx_default.side-by-side.png",
-            "pixel_mismatch_ratio": null,
-            "critical_deltas": null,
-            "last_run": null
-          }
-        }
-      ]
+    "view_entry_shape": {
+      "id": "<screen>_<state>, e.g. f010_default (also the folder name)",
+      "screen": "human name", "family": "shell|fa|cefs|latam|nnm|shhp|contentlet|ipad|...",
+      "state": "default|empty|error|tab:<name>|modal:<name>|...",
+      "folder": "evidence-root-relative folder, usually == id",
+      "data_mode": "record|live (how the React side gets REAL data)",
+      "status": "analyzed|implemented|verified|blocked",
+      "usable": "true only if the legacy capture passed readiness + is not an error page",
+      "isError": "true if the captured page was an error/wrong view (then it lives under _rejected/)",
+      "navPathFromStart": "the from-start click-path used to reach this view (mirrors nav-path.json)",
+      "files": {
+        "screenshot": "legacy.png", "dom": "legacy.dom.html", "model": "legacy.model.json",
+        "reactModel": "react.model.json", "sourceModel": "source-model.json",
+        "navPath": "nav-path.json", "har": "legacy.har", "capture": "legacy.capture.json"
+      },
+      "endpoints": [{ "method": "GET", "path": "/BAA/fateamprofile.do", "layer": "struts", "trigger": "tab:Compensation" }],
+      "parity": { "report": "parity/<id>.parity-report.md", "sideBySide": "parity/<id>.side-by-side.png",
+                  "pass": null, "pixel": null, "criticalDeltas": null, "dataPresent": null, "last_run": null },
+      "rejected": ["_rejected/legacy.png — quarantined error capture (if any)"]
     }
   },
 
@@ -47,42 +33,34 @@
     "legacy_url": "<entry url>",
     "evidence_root": "<abs path>",
     "viewport": "1920x1080",
+    "theme": "theme/theme.css",
+    "tokens": "theme/tokens.json",
+    "viewgraph": "viewgraph.json",
     "generated_by": "legacy-crawl-capture",
-    "schema_version": 1
+    "schema_version": 2
   },
 
-  "screens": [
+  "views": [
     {
-      "id": "F000",
-      "family": "shell",
+      "id": "f000_default",
       "screen": "Login page",
-      "route": "/BAA/jsp/login.jsp",
-      "reach_path": "open entry URL (pre-auth)",
-      "states": [
-        {
-          "state": "default",
-          "viewport": "1920x1080",
-          "captured_at": "<stamped at run time>",
-          "artifacts": {
-            "screenshot": "screenshots/f000_default.png",
-            "dom": "dom/f000_default.dom.html",
-            "computed": "dom/f000_default.computed.json",
-            "a11y": "dom/f000_default.a11y.json",
-            "network": "fixtures/f000_default.network.json",
-            "fixture": "fixtures/f000_default.fixture.json"
-          },
-          "sha256": { "screenshot": "<hex>", "dom": "<hex>" },
-          "endpoints": [],
-          "parity": {
-            "status": "not-run",
-            "report": null,
-            "side_by_side": null,
-            "pixel_mismatch_ratio": null,
-            "critical_deltas": null,
-            "last_run": null
-          }
-        }
-      ]
+      "family": "shell",
+      "state": "default",
+      "folder": "f000_default",
+      "data_mode": "live",
+      "status": "analyzed",
+      "usable": true,
+      "isError": false,
+      "navPathFromStart": [{ "action": "navigate", "url": "/BAA/jsp/login.jsp" }],
+      "files": {
+        "screenshot": "legacy.png", "dom": "legacy.dom.html", "model": "legacy.model.json",
+        "reactModel": "react.model.json", "sourceModel": "source-model.json",
+        "navPath": "nav-path.json", "har": "legacy.har", "capture": "legacy.capture.json"
+      },
+      "endpoints": [{ "method": "POST", "path": "/BAA/loginAction.do", "layer": "struts", "trigger": "submit" }],
+      "parity": { "report": "parity/f000_default.parity-report.md", "sideBySide": "parity/f000_default.side-by-side.png",
+                  "pass": null, "pixel": null, "criticalDeltas": null, "dataPresent": null, "last_run": null },
+      "rejected": []
     }
   ]
 }

@@ -163,6 +163,8 @@ def main():
     ap.add_argument("--workflow", help="JSON file of navigate/click/fill/select/wait steps to reach a deep state before capture.")
     ap.add_argument("--full-page", action="store_true", help="Full scrollable page (default: viewport only, recommended for parity).")
     ap.add_argument("--body-cap", type=int, default=500_000, help="Max response body bytes stored per request.")
+    ap.add_argument("--record-har", action="store_true", help="Record a HAR of the REAL backend responses (responses.har) so the React app can replay real data with no fakes.")
+    ap.add_argument("--error-signature", action="append", default=None, help="Extra text that marks an error/wrong page (repeatable). Matched against title+url+body; a hit QUARANTINES the capture.")
     ap.add_argument("--self-check", action="store_true", help="Validate environment/args without launching a browser, then exit.")
     args = ap.parse_args()
 
@@ -174,6 +176,13 @@ def main():
     wait_for_gone = args.wait_for_gone if args.wait_for_gone is not None else prof.get("waitForGone")
     wait_ms = args.wait_ms if args.wait_ms is not None else int(prof.get("waitMs", 0))
     rt_timeout = args.readiness_timeout
+    record_har = args.record_har or bool(prof.get("recordHar"))
+    # error signatures: built-in defaults + profile + CLI (all lowercased, matched against title+url+body)
+    error_signatures = [s.lower() for s in (
+        ["http status 5", "http status 4", "error 500", "error 404", "exception report",
+         "stack trace", "page not found", "an error has occurred", "loginaction.do"]
+        + list(prof.get("errorSignatures", []) or [])
+        + list(args.error_signature or []))]
 
     if args.self_check:
         try:
@@ -183,6 +192,7 @@ def main():
             ok = False
         out_base = os.path.join(args.out_dir, args.name) if (args.out_dir and args.name) else None
         print(json.dumps({"self_check": "ok", "viewport": vp, "out_base": out_base, "playwright_importable": ok,
+                          "record_har": record_har, "error_signatures": len(error_signatures),
                           "resolved": {"url": url, "wait_for": wait_for, "must_contain": must_contain,
                                        "wait_for_gone": wait_for_gone, "wait_ms": wait_ms}}))
         return
@@ -192,7 +202,8 @@ def main():
     if not url:
         raise SystemExit('no URL: pass --url or put "url" in --profile')
     os.makedirs(args.out_dir, exist_ok=True)
-    base = os.path.join(args.out_dir, args.name)
+    har_path = os.path.join(args.out_dir, args.name + ".har")  # provisional; moved to _rejected/ if quarantined
+    # `base` (output path prefix) is decided AFTER load — a quarantined error capture goes under _rejected/.
 
     try:
         from playwright.sync_api import sync_playwright
@@ -209,17 +220,23 @@ def main():
         steps = json.load(open(prof["workflow"]))
     network, assets = [], []
 
+    doc_status = {"code": None}  # status of the top-level navigation document (mutable holder)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         ctx_kwargs = {"viewport": vp, "device_scale_factor": 1}
         if args.auth_state:
             ctx_kwargs["storage_state"] = args.auth_state
+        if record_har:
+            ctx_kwargs.update(record_har_path=har_path, record_har_content="embed", record_har_mode="full")
         ctx = browser.new_context(**ctx_kwargs)
         page = ctx.new_page()
 
         def on_response(resp):
             try:
                 rt = resp.request.resource_type
+                if rt == "document" and resp.request.is_navigation_request():
+                    doc_status["code"] = resp.status   # final top-level document status (e.g. 500 = error page)
                 if rt in ("document", "xhr", "fetch"):
                     rec = {"method": resp.request.method, "url": resp.url, "status": resp.status,
                            "resource_type": rt, "content_type": resp.headers.get("content-type", "")}
@@ -281,6 +298,30 @@ def main():
         except Exception:
             body_font = ""
 
+        final_url = page.url
+        try:
+            title = page.title()
+        except Exception:
+            title = ""
+        try:
+            body_sample = page.evaluate("document.body ? document.body.innerText.slice(0,4000) : ''") or ""
+        except Exception:
+            body_sample = ""
+        # --- error-page detection: a page can satisfy 'loaded' yet be a 500 / login / wrong view ---
+        # (the user's exact complaint: error pages were being promoted as the final view)
+        blob = (title + " " + final_url + " " + body_sample).lower()
+        sig_hit = next((s for s in error_signatures if s and s in blob), None)
+        http_err = (doc_status["code"] is not None and doc_status["code"] >= 400)
+        error_page = bool(sig_hit or http_err)
+        if error_page:
+            warnings.append("error-page detected (status=%s, signature=%r) -> quarantined to _rejected/"
+                            % (doc_status["code"], sig_hit))
+
+        # quarantined captures go under _rejected/ so they are NOT promoted as the view's evidence
+        target_dir = os.path.join(args.out_dir, "_rejected") if error_page else args.out_dir
+        os.makedirs(target_dir, exist_ok=True)
+        base = os.path.join(target_dir, args.name)
+
         page.screenshot(path=base + ".png", full_page=args.full_page)
         open(base + ".dom.html", "w", encoding="utf-8").write(page.content())
         model = page.evaluate(EXTRACTOR_JS, STYLE_PROPS)
@@ -291,32 +332,42 @@ def main():
             a11y = None
         json.dump(a11y, open(base + ".a11y.json", "w", encoding="utf-8"), indent=1)
         json.dump(network, open(base + ".network.json", "w", encoding="utf-8"), indent=1)
-        final_url = page.url
         ctx.close()
         browser.close()
 
-    # usable = every defined readiness check passed AND no CSS/JS failed (i.e. real parity evidence, not just "rendered")
+    # HAR is flushed on context close; relocate it next to the (possibly quarantined) artifacts
+    har_out = None
+    if record_har and os.path.exists(har_path):
+        har_out = base + ".har"
+        if os.path.abspath(har_out) != os.path.abspath(har_path):
+            os.replace(har_path, har_out)
+
+    # usable = readiness passed AND no CSS/JS failed AND it is not an error page (real parity evidence)
     usable = (readiness["wait_for"] is not False
               and all(readiness["must_contain"].values())
               and readiness["wait_for_gone"] is not False
-              and not asset_fail)
+              and not asset_fail
+              and not error_page)
 
     meta = {
-        "name": args.name, "url": url, "final_url": final_url,
+        "name": args.name, "url": url, "final_url": final_url, "title": title,
         "viewport": args.viewport or prof.get("viewport") or "1920x1080",
         "auth_state": bool(args.auth_state), "profile": args.profile,
         "captured_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "readiness": readiness, "usable": usable, "warnings": warnings,
+        "readiness": readiness, "usable": usable, "rejected": error_page,
+        "error": {"is_error_page": error_page, "doc_status": doc_status["code"], "signature_hit": sig_hit},
+        "warnings": warnings,
         "assets": {"ok": not asset_fail, "failed": asset_fail[:20], "stylesheets": stylesheets, "scripts": scripts},
-        "body_font_family": body_font,
+        "body_font_family": body_font, "har": har_out,
         "sha256": {"png": sha256(base + ".png"), "dom": sha256(base + ".dom.html")},
         "elements": len(model["elements"]), "tables": len(model["tables"]), "network_records": len(network),
     }
     json.dump(meta, open(base + ".capture.json", "w", encoding="utf-8"), indent=1)
 
-    print(json.dumps({"ok": True, "name": args.name, "usable": usable, "warnings": warnings,
+    print(json.dumps({"ok": True, "name": args.name, "usable": usable, "rejected": error_page,
+                      "error_page": error_page, "warnings": warnings,
                       "png": base + ".png", "model": base + ".model.json", "capture": base + ".capture.json",
-                      "elements": meta["elements"], "network_records": meta["network_records"]}, indent=1))
+                      "har": har_out, "elements": meta["elements"], "network_records": meta["network_records"]}, indent=1))
 
 
 if __name__ == "__main__":

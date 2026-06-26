@@ -1,24 +1,26 @@
-# Porting legacy CSS faithfully (CSS Modules)
+# Porting legacy CSS faithfully — TOKENS first (CSS Modules)
 
-The captured **computed styles** (`<id>.model.json` → each element's `style{}`) are the source of truth
-for visual values, backed by the legacy `*.css`. Copy exact values; do not round or approximate (same
-discipline fig2code uses with Figma design-context values).
+Colors and fonts come from the **extracted theme** (`extract_theme.py` → `theme.css` CSS variables +
+`tokens.json`), imported globally. Style from those tokens, not per-element guesses — that's what keeps
+color/typography consistent across screens and stops the drift that was reported. The captured computed
+styles (`<id>.model.json` → each element's `style{}`) are how you pick WHICH token and fill gaps (box
+geometry, spacing) — and how parity verifies the result.
 
 ## Method
 
-1. For each element you port, read its captured `style{}` (font, size, weight, color, background, border,
-   box metrics) and paste those values into a CSS Module class. CSS values are already in `px`/hex — no
-   conversion.
+1. Style each element with the theme tokens; use the captured `style{}` to choose the matching token and to
+   set geometry (box metrics aren't in the palette). Don't paste a raw hex when a token exists.
    ```css
-   /* FaTeamProfile.module.css — values pasted from captured computed styles */
-   .panel { color:#646464; background-color:#e6e3e0; font-family:'Frutiger 45 Light',sans-serif;
-            font-size:13px; line-height:15px; letter-spacing:1px; width:792px;
-            padding:8px 12px; border:1px solid #cccccc; box-sizing:border-box; }
+   /* FaTeamProfile.module.css — colors/fonts via theme vars; geometry from the captured box */
+   .panel { color: var(--color-03); background-color: var(--color-07);
+            font-family: var(--font-1); font-size: var(--fs-13); line-height: 15px; letter-spacing: 1px;
+            width: 792px; padding: 8px 12px; border: 1px solid var(--color-11); box-sizing: border-box; }
    ```
-2. The CSS Module class name is internal (parity compares computed styles, not class names). Match the
-   *values*, not the legacy selectors.
-3. Use the parity report's **advisory style hints** as a punch-list: each one names a prop with `legacy vs
-   react` values for a located element — set the React value to the legacy value and re-verify.
+2. If the captured value isn't in `tokens.json`, confirm it against the computed style, then add it (it's a
+   real legacy value the harvest missed) — don't invent a "close" color.
+3. The CSS Module class name is internal (parity compares computed styles, not class names). Match the *values*.
+4. Use the parity report's **advisory style hints** as a punch-list: each names a prop with `legacy vs react`
+   values for a located element — set the React value (usually: point it at the right token) and re-verify.
 
 ## Fonts (biggest source of pixel noise)
 

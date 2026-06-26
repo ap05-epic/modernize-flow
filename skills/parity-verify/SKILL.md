@@ -15,9 +15,15 @@ script says so. Two complementary lanes:
 - **Pixel lane** (`pixel_diff.js`, pixelmatch) — visual exactness. Catches what the DOM can't: wrong
   spacing, color, font metrics. Emits a mismatch ratio **and located regions**, each mapped to the React
   element under it so the fix is targeted.
+- **Data-presence check** — did the React side actually render the REAL data? Fails the gate if React
+  rendered far fewer elements than legacy, or has empty tables where legacy had rows (catches "data missing").
 
-Both sides are captured by `legacy-crawl-capture/capture_screen.py` (same script, same viewport, same
-fixture data) → the two `model.json` and the two `png` are always comparable.
+**Two data modes** (`--data-mode`): in **record** mode both sides show the SAME recorded real data, so the
+pixel lane is GATED (exact). In **live** mode the React side shows real-time backend data that drifts from
+the captured shot, so the pixel lane is ADVISORY and the gate is structure + style + data-presence.
+
+Both sides are captured by `legacy-crawl-capture/capture_screen.py` (same script, same viewport) → the two
+`model.json` and the two `png` are always comparable.
 
 > Run each script with `--help` / `--self-check` first.
 
@@ -26,13 +32,14 @@ fixture data) → the two `model.json` and the two `png` are always comparable.
 ### verify_screen.py — the one you usually call (fuses both lanes + gate)
 ```bash
 python scripts/verify_screen.py \
-  --legacy-model work/screenshots/f010_default.model.json --legacy-png work/screenshots/f010_default.png \
-  --react-model  work/react/f010_default.model.json       --react-png  work/react/f010_default.png \
-  --out-dir work/parity --name f010_default --pixel-threshold 0.005
+  --legacy-model <evidence>/f010_default/legacy.model.json --legacy-png <evidence>/f010_default/legacy.png \
+  --react-model  <evidence>/f010_default/react.model.json  --react-png  <evidence>/f010_default/react.png \
+  --out-dir <evidence>/f010_default/parity --name f010_default --data-mode record --pixel-threshold 0.005
 ```
 Writes `f010_default.parity-report.md` (read this), `.parity-report.json`, `.diff.png`,
 `.side-by-side.png`. **Exit code 0 = PASS, 2 = FAIL** — gate on it in the builder loop.
-PASS = **0 critical structural deltas AND pixel ratio ≤ threshold AND no size mismatch**.
+PASS (record) = **0 critical structural deltas AND data present AND pixel ratio ≤ threshold AND no size
+mismatch**. PASS (live) = **0 critical deltas AND data present AND style match** (pixel advisory).
 
 ### dom_diff.py — structural lane alone (importable)
 ```bash

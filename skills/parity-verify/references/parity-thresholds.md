@@ -2,6 +2,16 @@
 
 The gate has two knobs. Tune them in STATUS.md §3 and pass via `verify_screen.py --pixel-threshold`.
 
+## Data mode changes what's gated (`verify_screen.py --data-mode`)
+
+- **record mode** (REAL responses replayed via HAR — both sides show identical data): pixels are **GATED**
+  exactly as below. This is the mode for proving pixel parity.
+- **live mode** (Vite proxy to the live backend — data is real-time and drifts from the captured shot):
+  pixels are **ADVISORY**; the gate is structure + style + **data-presence** (and comparable size). Don't
+  fail a live-mode view on a pixel ratio caused by newer data — fail it on structure/style/missing data.
+- **Data-presence (both modes):** the React side must actually render the real data — `verify_screen.py`
+  fails the gate if React rendered far fewer elements than legacy or has empty tables where legacy had rows.
+
 ## The two gates
 
 1. **Structural (DOM lane) — strict, non-negotiable.** Target: **0 critical deltas.** Copy, labels,
@@ -34,8 +44,9 @@ A high pixel ratio is usually a capture mismatch, not a fidelity problem:
 
 - **Same viewport** on both sides (`capture_screen.py --viewport` identical). A size mismatch fails the
   gate by design — render React at the legacy viewport.
-- **Same data.** The React side must render the captured fixture (MSW on), so both screens show identical
-  text/rows. Different data ⇒ huge, meaningless pixel diff.
+- **Same data.** In record mode the React side replays the REAL recorded responses (HAR), so both screens
+  show identical text/rows — different data ⇒ huge, meaningless pixel diff. (In live mode data legitimately
+  differs, which is exactly why live mode gates on structure/style, not pixels.)
 - **Fonts loaded / animations settled.** Use `--wait-ms` and the built-in `document.fonts.ready` wait;
   disable CSS transitions in the React app during capture if needed.
 - **No transient overlays.** Capture the steady state (loaders gone), as the analyzer captured the legacy.

@@ -1,57 +1,70 @@
 ---
 name: react-replica-kit
-description: Scaffold and conventions for the fresh Vite + React + TypeScript app that holds the 1:1 legacy replicas, wire captured fixtures via MSW so screens render with no live backend, and serve a side-by-side review of legacy vs React. Use when starting the jsp2react target app and when building each screen component. Enforces faithful HTML/CSS porting (no component library, no restyling) so nothing is added or "modernized" beyond the framework swap.
+description: Scaffold and conventions for the fresh Vite + React + TypeScript app that holds the 1:1 legacy replicas, built FROM the JSP source model + the extracted legacy theme, fed REAL backend data (record mode replays recorded responses via MSW; live mode proxies the real backend via Vite), with a rebuilt login and a navigable evidence index. Use when starting the jsp2react target app and when building each view. Enforces faithful HTML/CSS porting (no component library, no restyling) so nothing is added or "modernized" beyond the framework swap.
 ---
 
 # react-replica-kit
 
-The target side of **jsp2react**. The app's only job is to render each legacy screen 1:1 from captured
-evidence. Deliberately minimal: Vite + React + TS, plain CSS Modules, **no component library** (a library
-would impose its own look and violate "no new artifacts").
+The target side of **jsp2react**. Each view is rebuilt 1:1 **from its source model + the legacy theme**,
+fed **real backend data**. Deliberately minimal: Vite + React + TS, plain CSS Modules using theme CSS
+variables, **no component library** (a library would impose its own look and violate "no new artifacts").
+
+## Extract the theme (once, before building)
+```bash
+python scripts/extract_theme.py --css-dir <webapp>/theme --css-dir <webapp>/platform/styleSheets \
+  --out-dir <evidence>/theme        # -> tokens.json + theme.css   (--self-check for a no-file run)
+```
+Colors/fonts come from these tokens, not per-element guesses (fixes color drift). See `references/theme-extraction.md`.
 
 ## Scaffold (once per project)
 ```bash
-bash scripts/scaffold_app.sh <target-dir>     # path also recorded in STATUS.md
+bash scripts/scaffold_app.sh <target-dir> <evidence>/theme/theme.css   # path also recorded in STATUS.md
 ```
-Creates a Vite React-TS app, installs `msw` + `pixelmatch`/`pngjs`, runs `msw init public/`, and wires
-`src/mocks/` (auto-aggregating handlers) + an MSW bootstrap in `src/main.tsx`. MSW is ON by default;
-`VITE_MSW=off npm run dev` hits the real backend (data-wiring QA only).
+Creates a Vite React-TS app, imports `theme.css` globally, wires BOTH data modes (MSW record-replay +
+Vite live proxy in `vite.config.ts`), seeds the **Login screen (F000)**, and installs `msw` +
+`pixelmatch`/`pngjs`. Data mode: `VITE_DATA_MODE=record` (default, MSW replays REAL recorded responses)
+or `VITE_DATA_MODE=live VITE_BACKEND=<url>` (Vite proxy to the real backend). See `references/backend-data-modes.md`.
 
-## Build one screen (the builder does this per iteration)
+## Build one view (the builder does this per iteration)
 
-1. **Fixtures** — wire this screen's captured data:
+1. **Real data** (record mode) — replay this view's REAL recorded responses:
    ```bash
    python <…>/legacy-crawl-capture/scripts/capture_fixtures.py \
-     --network work/screenshots/<id>.network.json --out <target>/src/mocks/<id>
+     --har <evidence>/<id>/legacy.har --out <target>/src/mocks/<id>
    ```
-   The aggregator picks it up automatically (no manual registration).
-2. **Component** — one screen → `src/screens/<Name>/`:
-   - `<Name>.tsx` — structure ported from the captured DOM model + JSP source (see mapping reference).
-   - `<Name>.module.css` — styles ported from the captured computed styles (see css-porting reference).
-   - `data.ts` — fetch the same endpoint path(s); MSW returns the fixture. Types from spec.md Appendix B.
-   - route it by its STATUS.md id (e.g. hash route `#/<id>`), matching what `serve_review.py` links to.
-3. **Render the same data + viewport** the legacy screenshot used (MSW on).
+   The aggregator picks it up automatically. (Live-mode views skip this — the Vite proxy serves the real backend.)
+2. **Component FROM SOURCE** — one view → `src/screens/<Name>/`:
+   - `<Name>.tsx` — structure translated from `<id>/source-model.json` (loops→`.map()`, `<html:*>`→inputs,
+     message keys→exact labels); confirm against the captured DOM model. See `references/jsp-to-react-mapping.md`.
+   - `<Name>.module.css` — styles via the theme CSS variables (`var(--color-01)`…); geometry from the captured
+     box. See `references/css-porting.md` (tokens-first).
+   - fetch through `src/api.ts` (same endpoint paths from `source-model.ajaxEndpoints`). Types from spec.md Appendix B.
+   - route by STATUS.md id (hash route `#/<id>`), matching `serve_review.py`.
+3. **Render the real data at the same viewport** the legacy capture used.
 
-## Capture the React render for parity (same tool as the legacy side)
+## Capture the React render for parity (same tool + profile as the legacy side)
 ```bash
-python <…>/legacy-crawl-capture/scripts/capture_screen.py \
-  --url http://localhost:5173/#/<id> --out-dir work/react --name <id>_default --viewport 1920x1080
+python <…>/legacy-crawl-capture/scripts/capture_screen.py --profile profiles/<id>.json \
+  --url http://localhost:5173/#/<id> --out-dir <evidence>/<id> --name react
 ```
-Then run `parity-verify/verify_screen.py` with the legacy + react `model.json`/`png`. Using the same
-capture script on both sides is what makes the diff valid.
+Then `parity-verify/verify_screen.py --data-mode <record|live>` with the legacy + react `model.json`/`png`.
+Same capture script + profile on both sides is what makes the diff valid.
 
 ## Review side by side
 ```bash
-python scripts/serve_review.py --work-dir work --react-base-url http://localhost:5173 --port 8800
+python scripts/build_index.py --manifest <evidence>/MANIFEST.json    # -> evidence/INDEX.html (static, navigable)
+python scripts/serve_review.py --work-dir <evidence> --react-base-url http://localhost:5173 --port 8800
 ```
-Per screen: PASS/FAIL, pixel %, the `side-by-side.png` (legacy | react | diff), a link to the report,
-and an optional live iframe.
+`INDEX.html` is the navigable per-view index (thumbnails, status, data mode, links, quarantined captures).
+`serve_review.py` adds PASS/FAIL + the `side-by-side.png` + an optional live iframe.
 
 ## References
-- `references/jsp-to-react-mapping.md` — JSP/Struts/Dojo construct → React+TS construct, and the
-  "no new artifacts" rules (what you may and may not change).
-- `references/css-porting.md` — porting legacy CSS faithfully into CSS Modules; fonts, icons, assets.
+- `references/jsp-to-react-mapping.md` — source-model → React+TS construct mapping, "no new artifacts" rules.
+- `references/css-porting.md` — tokens-first CSS porting; fonts, icons, assets, geometry.
+- `references/theme-extraction.md` — extracting the legacy palette/fonts into theme tokens.
+- `references/backend-data-modes.md` — record (HAR replay) vs live (Vite proxy), session reuse, login.
 
 ## Dependencies (open source, MIT — see SETUP.md)
 - Vite + React + TypeScript (`npm create vite -- --template react-ts`).
-- `msw` (github.com/mswjs/msw); `pixelmatch` + `pngjs` for parity.
+- `msw` (record-mode replay + error injection); `pixelmatch` + `pngjs` for parity. `extract_theme.py`/
+  `build_index.py` are stdlib Python (no extra deps).

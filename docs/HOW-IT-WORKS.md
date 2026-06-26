@@ -7,10 +7,11 @@ A guide you can read to understand the system — and use to explain it to other
 
 > We have a big old web app (Java/JSP/Struts). We want a modern React version that looks and behaves
 > *exactly* the same. jsp2react is a set of instructions + small tools that let GitHub Copilot do this
-> automatically: it logs into the old app, visits every screen, takes a precise "fingerprint" of each
-> one, rebuilds it in React, and then **mathematically checks** that the React copy matches the original —
-> screen by screen — instead of just eyeballing it. If it doesn't match, the tool says exactly what's
-> different so the AI can fix it and check again.
+> automatically: it logs in, **reads the old screen's actual source code** (the JSP/AJAX) and **extracts the
+> real color/font theme**, finds **every view — including the ones that load by AJAX** (the tabs and menus
+> behind one link), rebuilds each in React **from that source**, feeds it the **real backend data**, and then
+> **mathematically checks** that the React copy matches the original — view by view — instead of eyeballing
+> it. If it doesn't match, the tool says exactly what's different so the AI makes a small fix and re-checks.
 
 ## The problem
 
@@ -30,11 +31,11 @@ Two "agents" (instruction manuals the AI follows) and three "skills" (small tool
 
 | Piece | Role |
 |---|---|
-| **Agent: analyzer** | Logs in, finds every screen, captures each one (screenshot + structure + data), maps its endpoints, and writes the plan. |
-| **Agent: builder** | Takes the plan and, **one screen at a time**, rebuilds it in React and proves it matches. |
-| **Skill: legacy-crawl-capture** | Finds and "fingerprints" each legacy screen. |
-| **Skill: parity-verify** | The proof engine — compares old vs new and reports exactly what differs. |
-| **Skill: react-replica-kit** | Sets up the React app and a side-by-side review page. |
+| **Agent: analyzer** | Logs in, extracts the theme, finds every view (incl. AJAX views, reached from the start), **parses each JSP into a "source model,"** captures each one (screenshot + structure + the real responses), and writes the plan. |
+| **Agent: builder** | Takes the plan and, **one view at a time**, rebuilds it in React **from the source model + theme**, feeds it real data, and proves it matches. |
+| **Skill: legacy-crawl-capture** | Parses the JSP source, finds every view (static + AJAX), and "fingerprints" each one. |
+| **Skill: parity-verify** | The proof engine — compares old vs new (structure, style, and that the real data rendered) and reports exactly what differs. |
+| **Skill: react-replica-kit** | Extracts the theme, sets up the React app (real-data wiring + login), and builds a navigable review index. |
 
 It also **reuses tools the pod already has** instead of reinventing them: the existing login tool, the
 screenshot tool, the browser/testing tool, and the team memory.
@@ -43,13 +44,13 @@ screenshot tool, the browser/testing tool, and the team memory.
 
 ```
 1. Read STATUS.md            → what's done, what's next (this keeps the AI on track over a long run)
-2. Look at the captured      → the screenshot + a "fingerprint" of the legacy screen
-   evidence for one screen
-3. Build it in React 1:1     → same layout, text, fields, columns — nothing added or removed
-4. Feed it the same data     → using saved copies of the real responses (so no live backend needed)
-5. PROVE it matches          → run the check; get a pass/fail + a list of differences
+2. Read the SOURCE MODEL     → the parsed JSP (loops, form fields, labels, which click loads which data)
+   + theme + evidence          + the real color/font theme; the screenshot is only the check, not the input
+3. Build it in React 1:1     → from the source: same layout, text, fields, columns; colors from the theme
+4. Feed it the REAL data     → record (replay the real recorded responses) OR live (proxy the real backend)
+5. PROVE it matches          → run the check; pass/fail + a list of exactly what differs (incl. "data missing")
 6. Fix from the list         → repeat 5–6 until it passes
-7. Mark it verified, move on → update STATUS.md, next screen
+7. Mark it verified, move on → update STATUS.md, regenerate the index, next view
 ```
 
 The trick that keeps a long, 220-screen run from going off the rails: **one screen per turn, tracked in a
@@ -57,37 +58,51 @@ checklist file (STATUS.md)**. The AI never has to hold the whole app in its head
 
 ## How we "prove" a match (the important part)
 
-A screen passes only when a script — not the AI's opinion — says so. The check has two halves:
+A view passes only when a script — not the AI's opinion — says so. The check has three parts:
 
-1. **Structure check.** Compares the *meaning* of both screens: every label, every column, field order,
+1. **Structure check.** Compares the *meaning* of both views: every label, every column, field order,
    tab order, validation message, every control. These must match **exactly**. This catches things a
    picture can't — e.g. "Acct #" vs "Account #" looks almost identical but is wrong.
-2. **Picture check.** Compares the two screenshots pixel-by-pixel and highlights the regions that differ,
-   then points at *which element* is in that spot — e.g. "this table header is off." Tiny differences from
-   fonts/anti-aliasing are ignored; real layout/spacing/color differences are not.
+2. **Data check.** Confirms the React side actually rendered the **real data** — not an empty table or a
+   half-loaded view. ("Looks like the page but the rows are missing" fails here.)
+3. **Picture check.** Compares the two screenshots pixel-by-pixel and points at *which element* is off.
+   When both sides show the *same recorded data* (**record mode**) this is exact. When the React side is
+   pulling *live* data that may have changed since capture (**live mode**), the picture is advisory and the
+   structure/style/data checks carry the gate. Font anti-aliasing is ignored; real layout/spacing/color is not.
 
 The output is a short report that says, in plain terms, *what* is different and *where* — so the AI makes a
 small, targeted fix and re-checks. **The AI fixes from facts; it never decides "good enough" by eye.**
 
-## How it renders with no backend
+## How it gets real data (never fakes)
 
-The React copy must look right on its own, without the old server running. During capture we save the
-real data each screen received. The React app is fed those saved copies (via a tool called MSW), so it
-shows the **same data** the original screenshot showed — which is also what makes the pixel check fair.
-The same endpoint addresses are still wired up, so you *can* point it at the real backend later if you want.
+The copy must show **real backend data**, never hand-made dummy data. Two ways, picked per view:
+
+- **record** — during capture we save the screen's *actual* responses to a file (a HAR). The React app
+  replays those exact real bytes, so it shows the same real data the original did — and the picture check is
+  exact because both sides are identical. No live backend needed to render.
+- **live** — the React app talks to the *real* backend through a dev proxy, reusing the login session, and
+  shows real-time data. Most "live," but since live data can change, the match is judged on structure/style.
+
+Either way the endpoint addresses are identical to the old app, so switching modes needs no code change.
+The login screen is rebuilt for real, so its session is what authorizes the data calls.
 
 ## The three promises it keeps
 
-- **Exact copy (1:1):** enforced by the structure check + "never guess a screen you haven't captured."
-- **Nothing new added:** plain HTML/CSS, no UI component library, reuse the old icons/fonts — only the
-  framework changes, never the appearance.
-- **Proven, not claimed:** a screen is "done" only when the check script passes and leaves a side-by-side
-  image for a human to glance at.
+- **Exact copy (1:1):** built from the JSP **source** (not guessed from a picture) and enforced by the
+  structure check + "never guess a view you haven't captured or parsed."
+- **Nothing new added:** plain HTML/CSS, no UI component library, colors/fonts from the **extracted legacy
+  theme**, reuse the old icons/fonts — only the framework changes, never the appearance.
+- **Real data, never fakes:** every view shows real backend data (recorded-and-replayed, or live).
+- **No wrong pages slip through:** error/half-loaded pages are detected and quarantined, never accepted as
+  the real view.
+- **Proven, not claimed:** a view is "done" only when the check script passes and leaves a side-by-side
+  image; a generated **INDEX page** lists every view with its status for a human to glance at.
 
 ## What you actually run
 
 Install once (`bash install.sh`), then tell Copilot to run the **analyzer** with just the **legacy URL and
-how to log in**. The analyzer sets up its own tracking file (STATUS.md) and captures everything — you don't
-configure anything by hand. Then run the **builder** repeatedly (one screen at a time). The exact prompts
-are in [SETUP.md §6b](../SETUP.md). A side-by-side review page lets you and your colleagues compare
-originals against the React replicas.
+how to log in**. The analyzer sets up its own tracking file (STATUS.md), extracts the theme, discovers every
+view (including AJAX views), parses the source, and captures everything — you don't configure anything by
+hand. Then run the **builder** repeatedly (one view at a time). The exact prompts are in
+[SETUP.md §6b](../SETUP.md). A generated `INDEX.html` plus a side-by-side review page let you and your
+colleagues compare originals against the React replicas, view by view.

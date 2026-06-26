@@ -16,22 +16,29 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 
 def collect(work_dir):
+    # v2 per-view layout: <work>/<view>/parity/<name>.parity-report.json  (recursive glob handles either).
     rows = []
-    for rep in sorted(glob.glob(os.path.join(work_dir, "parity", "*.parity-report.json"))):
+    reps = glob.glob(os.path.join(work_dir, "**", "*.parity-report.json"), recursive=True)
+    for rep in sorted(reps):
         try:
             d = json.load(open(rep, encoding="utf-8"))
         except Exception:
             continue
         name = d.get("name") or os.path.basename(rep).split(".")[0]
         g = d.get("gate", {})
+        viewdir = os.path.dirname(os.path.dirname(rep))          # <view>/  (parent of parity/)
+        relview = os.path.relpath(viewdir, work_dir).replace("\\", "/")
+        pref = "" if relview in (".", "") else relview + "/"
         rows.append({
             "name": name,
             "pass": bool(g.get("pass")),
             "ratio": g.get("pixel_ratio"),
             "critical": g.get("critical_structural"),
-            "sxs": f"parity/{name}.side-by-side.png",
-            "legacy": f"screenshots/{name}.png",
-            "report": f"parity/{name}.parity-report.md",
+            "data_mode": g.get("data_mode", "?"),
+            "data_present": g.get("data_present", True),
+            "sxs": f"{pref}parity/{name}.side-by-side.png",
+            "legacy": f"{pref}legacy.png",
+            "report": f"{pref}parity/{name}.parity-report.md",
         })
     return rows
 
@@ -43,13 +50,14 @@ def render(rows, react_base):
         badge = "✅ PASS" if r["pass"] else "❌ FAIL"
         color = "#137333" if r["pass"] else "#c5221f"
         ratio = f"{(r['ratio'] or 0)*100:.3f}%" if r["ratio"] is not None else "n/a"
+        datatag = f"· data {html.escape(str(r['data_mode']))}{'' if r['data_present'] else ' ⚠️MISSING'}"
         live = (f'<iframe src="{html.escape(react_base)}#/{html.escape(r["name"])}" '
                 f'width="480" height="300" style="border:1px solid #ccc"></iframe>') if react_base else ""
         cards.append(f"""
         <section style="margin:24px 0;border-top:1px solid #eee;padding-top:16px">
           <h2 style="font:600 16px sans-serif">{html.escape(r['name'])}
             <span style="color:{color}">{badge}</span>
-            <small style="color:#555;font-weight:400">· pixel {ratio} · critical {r['critical']}</small>
+            <small style="color:#555;font-weight:400">· pixel {ratio} · critical {r['critical']} {datatag}</small>
             <a href="{r['report']}" style="font-size:12px;margin-left:8px">report.md</a>
           </h2>
           <p style="font:12px sans-serif;color:#777">legend: legacy | react | diff</p>

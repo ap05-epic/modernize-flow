@@ -39,7 +39,9 @@ else
 fi
 
 echo ""
-echo "DONE. Verify the pixel engine, then start:"
-echo "  node $SKILLS_DST/parity-verify/scripts/pixel_diff.js --self-check    # expect identical_diff_pixels: 0"
-echo "  cp $HERE/templates/STATUS.md <your-run-folder>/   # then fill in sections 1-3"
-echo "  In Copilot: run the jsp2react-analyzer agent (prompts in SETUP.md section 6b)."
+echo "DONE. Verify the engines, then start:"
+echo "  node   $SKILLS_DST/parity-verify/scripts/pixel_diff.js --self-check      # expect identical_diff_pixels: 0"
+echo "  python $SKILLS_DST/legacy-crawl-capture/scripts/extract_jsp.py --self-check   # source parser"
+echo "  python $SKILLS_DST/react-replica-kit/scripts/extract_theme.py --self-check    # theme extractor"
+echo "  In Copilot: run the jsp2react-analyzer agent with just the legacy URL + login."
+echo "  It bootstraps STATUS.md itself (no hand-editing). Prompts: SETUP.md section 6b."

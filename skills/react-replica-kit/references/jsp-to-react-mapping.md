@@ -1,8 +1,10 @@
 # JSP / Struts / Dojo → React + TS mapping
 
-The legacy DOM (what Dojo/jQuery/JSP produced at runtime) is the target. Port the **rendered result**,
-not the framework. The captured `model.json` + `dom.html` show exactly what to reproduce; the JSP/JS
-source explains structure, conditionals, and behavior.
+**Build from the source model; verify against the capture.** The view's `source-model.json` (from
+`extract_jsp.py`) is the BUILD INPUT — it states the loops, conditionals, form fields, AJAX endpoints,
+and message keys. The captured `model.json` + `dom.html` are the VERIFICATION target (the rendered
+result to match). Port the rendered result, not the Dojo/jQuery framework — but get the structure from
+source, don't reconstruct it by eyeballing the screenshot. See `legacy-crawl-capture/references/jsp-source-extraction.md`.
 
 ## Construct mapping
 
@@ -16,8 +18,8 @@ source explains structure, conditionals, and behavior.
 | jQuery dataTables / clusterize grid | `<table>` with thead/tbody | plain `<table>` (or minimal virtualized list) | columns IN ORDER; no library that restyles |
 | Dojo widget (dijit) | the DOM it expands to | plain elements matching that DOM | inspect captured `dom.html`; reproduce output, drop Dojo |
 | `<bean:message key="x"/>` / `.properties` lookup | resolved label text | the **exact captured string** as a literal | do NOT re-translate or "improve" copy |
-| server-rendered data baked in HTML | static text/rows | render from fixture (`data.ts`) | same values the screenshot showed |
-| later XHR/ajax populating a region | dynamic content | `useEffect`→fetch same path; MSW returns fixture | same endpoint path |
+| server-rendered data baked in HTML | static text/rows | render from the REAL data (record: HAR replay / live: proxy) | same values the screenshot showed |
+| later XHR/ajax populating a region | dynamic content | `useEffect`→`apiFetch(same path)`; real response (record/live) | endpoint from `source-model.ajaxEndpoints`; same path |
 | `<img src="platform/images/x.svg">` | icon/image | `<img src="/assets/x.svg">` reuse the SAME asset | copy the asset; never recreate it |
 | inline `onclick="location.href='y.do'"` | navigation | `onClick`→ route/POST to same target | preserve the action/target |
 
@@ -37,17 +39,18 @@ component-library look; add spacing/padding "to make it nicer"; collapse two sta
 (the *class name* is internal; the *computed style* must match), and a router. Internal structure is free;
 observable output is frozen.
 
-## Forms & data wiring
+## Forms & data wiring (REAL data — see backend-data-modes.md)
 
-- Keep input `name` attributes identical to the ActionForm properties — they are the request contract and
-  the parity key.
-- Submit to the same `*.do` / REST path. With MSW on, the fixture answers; with `VITE_MSW=off`, the real
-  backend answers — both use the same path, so wiring is proven without a backend at render time.
-- Validation messages come from the captured screen / `.properties` (`[MSG:bundle:key]`) — reproduce the
-  exact text and the exact trigger condition; don't invent client validation the legacy screen lacks.
+- Get the fields from `source-model.forms[]`; keep input `name` attributes identical to the ActionForm
+  properties — they are the request contract and the parity key.
+- Fetch through `src/api.ts` on the same `*.do` / REST path (from `source-model.ajaxEndpoints`). In **record**
+  mode MSW replays the REAL recorded response; in **live** mode the Vite proxy hits the real backend with the
+  session. Same path either way — never hand-author data.
+- Validation messages come from `source-model.messageKeys` / the captured screen (`[MSG:bundle:key]`) —
+  reproduce the exact text and the exact trigger; don't invent client validation the legacy screen lacks.
 
 ## When evidence is incomplete
 
-If a visible state has no captured screenshot/DOM, STOP and capture it (analyzer) — do not infer layout,
-copy, columns, or controls from a backend payload or an adjacent screen. (Mirrors fig2code's Missing
-State Protocol and the team's "no visual inference" rule.)
+If a visible state has no captured screenshot/DOM AND no source model, STOP and have the analyzer
+capture/parse it — do not infer layout, copy, columns, or controls. Never build from a quarantined
+(`_rejected/`) error capture. (Mirrors fig2code's Missing State Protocol and "no visual inference".)

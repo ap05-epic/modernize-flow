@@ -33,7 +33,11 @@
 | Target React app path | <ABS path to scaffold, e.g. …/jsp2react-ui> |
 | Run command (target) | <npm run dev>  →  serves on <http://localhost:5173> |
 | Capture viewport | <1920x1080>  (used identically for legacy capture AND react render) |
-| Evidence root | <ABS path to ./jsp2react-work>  (screenshots/, dom/, fixtures/, parity/) |
+| Evidence root | <ABS path to ./jsp2react-work/evidence>  (ONE folder per view: `<id>_<state>/` with legacy.* + react.* + source-model.json + nav-path.json + parity/) |
+| Theme (from legacy CSS) | evidence/theme/theme.css + tokens.json  (extract_theme.py — colors/fonts come from here) |
+| View graph | evidence/viewgraph.json  (every static + AJAX view, each with a from-start click-path) |
+| Default data mode | <record | live>  (record = replay REAL recorded responses, exact parity; live = Vite proxy to real backend) |
+| Live backend (for live mode) | <http://127.0.0.1:8080>  (Vite proxy target; VITE_BACKEND) |
 
 ## 2. Tool Config  (paths the scripts/skills resolve on this pod)
 
@@ -51,27 +55,32 @@
 
 ## 3. Key Decisions  (high-impact answers known upfront)
 
-- **Login** is performed by the login step, NOT by these agents. <Describe: which skill/script, where creds live (e.g. /home/devpod/.copilot/BAX-BusinessAnalysis/.env), whether one manual SSO step is needed.>
-- **Render-without-backend**: the React app is served by MSW from captured fixtures by default. Same endpoint paths are wired; live backend is opt-in only (data-wiring QA).
-- **Parity gate**: PASS = 0 critical structural deltas AND pixel-mismatch ≤ threshold (see parity-thresholds.md). <note any tolerance override>
+- **Build from SOURCE, not the image**: the builder implements each view from its `source-model.json` (JSP loops/forms/labels/AJAX endpoints, from extract_jsp.py) + the legacy `theme.css` tokens. The screenshot/DOM only VERIFY the result.
+- **Real data, two modes** (Copilot picks per view): `record` = MSW replays the REAL responses recorded into responses.har at capture time (exact parity); `live` = Vite proxy forwards to the real backend (real-time data, structure/style parity). **No hand-authored/fake fixtures in either mode.**
+- **Login** is rebuilt as a real screen (F000); the session it establishes authenticates backend data calls. <Describe: where creds live (e.g. …/BAX-BusinessAnalysis/login.env), the real login action, whether one manual SSO step is needed.>
+- **Parity gate**: record mode → 0 critical structural deltas AND pixel ≤ threshold AND data present. live mode → 0 critical deltas AND style match AND data present (pixel advisory; live data drifts). See parity-thresholds.md.
+- **Colors/fonts** come from the extracted legacy theme tokens (theme.css), not per-element guesses.
 - **Component library**: none. Faithful HTML/CSS port only.
 - <other decisions: FA/search context needed to reach screens, entitlements, env (dev/qa), etc.>
 
 ## 4. Screen Inventory  (one row per user-visible screen OR distinct state/control)
 
-Granularity: a row per distinct screen, tab, sub-tab, modal, empty state, error state, and per distinct
-control group. Split coarse rows the moment runtime evidence shows separate states. (Heuristic in spec.md.)
+Granularity: a row per distinct view/state — including every AJAX-loaded view from `viewgraph.json`
+(tabs, hover-menu items, dropdowns, drill-downs), not just static routes. Split coarse rows the moment
+the viewgraph or runtime evidence shows separate states. Each row's evidence is one folder
+(`evidence/<id>_<state>/`) holding legacy.*, react.*, source-model.json, nav-path.json, parity/.
 
 Status legend (STRICT):
-`not-started` · `analyzed` (evidence captured, spec row written) · `in-progress` (coding) ·
+`not-started` · `analyzed` (evidence captured + source-model written) · `in-progress` (coding) ·
 `implemented` (code done, NOT yet parity-verified) · `verified` (parity report PASSED) ·
 `blocked` (record the blocker) · `deferred` (out of this run's scope, with reason)
 
-| ID | Family | Screen / State | Route / action (`.do`) | Depends on | Status | Evidence (shot/dom/fixture) | Parity | Notes |
-|----|--------|----------------|------------------------|-----------|--------|------------------------------|--------|-------|
-| F000 | shell | Login page | /BAA/jsp/login.jsp | — | analyzed | login.png / login.dom.html / — | — | pre-auth; example row |
-| F001 | shell | Summary shell (post-login) | <action> | F000 | not-started | <…> | — | hydration wait ~10s |
-| F010 | fa | FA Team Profile | fateamprofile.do | F001 | not-started | <…> | — | table; export PDF/Excel |
+| ID | Family | View / State | Reach from start (nav-path) | Data mode | Status | Evidence folder | Parity | Notes |
+|----|--------|--------------|-----------------------------|-----------|--------|-----------------|--------|-------|
+| f000_default | shell | Login page | navigate login.jsp | live | analyzed | evidence/f000_default/ | — | rebuilt; session feeds data |
+| f001_default | shell | Summary shell (post-login) | login → submit | record | not-started | <…> | — | hydration wait ~10s |
+| f010_default | fa | FA Summary (AB10) | login → search AB10 | record | not-started | <…> | — | from-start path; ~13s settle |
+| f010_comp | fa | FA Summary ▸ Compensation tab | login → search AB10 → click Compensation | record | not-started | <…> | — | AJAX view (viewgraph) |
 | … | … | … | … | … | … | … | … | … |
 
 ## 5. Coverage Matrix  (the completion gate — a run is NOT done until targets are met)
@@ -79,9 +88,11 @@ Status legend (STRICT):
 | Dimension | Discovered | Analyzed | Verified | % Verified | Target |
 |---|---|---|---|---|---|
 | Top-level families | <n> | <n> | <n> | <%> | 100% reachable |
-| Screens | <n> | <n> | <n> | <%> | 100% reachable |
-| Distinct states (tabs/empty/error/modal) | <n> | <n> | <n> | <%> | 100% reachable |
-| Endpoints mapped (fixtures captured) | <n> | <n> | — | <%> | 100% of screens' endpoints |
+| Views (static + AJAX, from viewgraph.json) | <n> | <n> | <n> | <%> | 100% reachable |
+| AJAX views (tabs/menus/drilldowns) | <n> | <n> | <n> | <%> | 100% reachable |
+| Source models extracted (extract_jsp.py) | <n> | <n> | — | <%> | 100% of views' JSPs |
+| Theme extracted (extract_theme.py) | <yes/no> | — | — | — | once, app-wide |
+| Endpoints recorded (HAR / real responses) | <n> | <n> | — | <%> | 100% of views' data calls |
 
 Blocked/unreachable items MUST be listed in §7 with recovery attempts, or the run is incomplete.
 

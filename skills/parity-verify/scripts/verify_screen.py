@@ -19,6 +19,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dom_diff  # same folder
 
 
+def data_presence(legacy, react):
+    """Did the React side actually render the data? Catches 'data missing/empty' regardless of mode."""
+    le, re_ = len(legacy.get("elements", [])), len(react.get("elements", []))
+    lrows = sum(t.get("rowCount", 0) for t in legacy.get("tables", []))
+    rrows = sum(t.get("rowCount", 0) for t in react.get("tables", []))
+    ratio = (re_ / le) if le else 1.0
+    reasons = []
+    if le and ratio < 0.5:
+        reasons.append("react rendered %d of legacy's %d elements (%.0f%%) — content likely missing" % (re_, le, ratio * 100))
+    if lrows > 0 and rrows == 0:
+        reasons.append("legacy tables have %d rows but react tables are empty — data not wired/rendered" % lrows)
+    return {"ok": not reasons, "legacy_elements": le, "react_elements": re_, "element_ratio": round(ratio, 3),
+            "legacy_rows": lrows, "react_rows": rrows, "reasons": reasons}
+
+
 def overlap_area(a, b):
     ix = max(0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]))
     iy = max(0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
@@ -62,8 +77,17 @@ def build_report_md(name, result):
     g = result["gate"]
     lines = [f"# Parity report — {name}   ·   RESULT: {'PASS ✅' if g['pass'] else 'FAIL ❌'}", ""]
     p = result["pixel"]
-    lines.append(f"- pixel mismatch: **{(p.get('ratio') or 0)*100:.3f}%** (threshold {g['pixel_threshold']*100:.3f}%)")
+    d = result.get("data", {})
+    lines.append(f"- data mode: **{g.get('data_mode','record')}** "
+                 f"({'pixel GATED — exact' if g.get('pixel_gated') else 'pixel ADVISORY — live data drifts; gating on structure/style/data'})")
+    px_tag = "" if g.get("pixel_gated") else "  _(advisory in live mode)_"
+    lines.append(f"- pixel mismatch: **{(p.get('ratio') or 0)*100:.3f}%** (threshold {g['pixel_threshold']*100:.3f}%){px_tag}")
     lines.append(f"- critical structural deltas: **{g['critical_structural']}**")
+    lines.append(f"- data present: **{'yes' if d.get('ok', True) else 'NO'}** "
+                 f"(react {d.get('react_elements','?')}/{d.get('legacy_elements','?')} elements, "
+                 f"rows {d.get('react_rows','?')}/{d.get('legacy_rows','?')})")
+    for r in d.get("reasons", []):
+        lines.append(f"  - ⚠️ {r}")
     if p.get("dimMismatch"):
         lines.append(f"- ⚠️ size mismatch legacy {p['dimMismatch']['legacy']} vs react {p['dimMismatch']['react']} — render the React screen at the legacy viewport.")
     if p.get("error"):
@@ -115,6 +139,9 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--name", required=True, help="e.g. f010_default")
     ap.add_argument("--pixel-threshold", type=float, default=0.005, help="max pixel mismatch ratio, default 0.005 (i.e. 0.5 percent).")
+    ap.add_argument("--data-mode", choices=["record", "live"], default="record",
+                    help="record: data is the SAME recorded responses -> pixel parity is GATED (exact). "
+                         "live: data is real-time and drifts -> pixel is advisory, gate on structure+style+data-presence.")
     ap.add_argument("--node", default="node")
     ap.add_argument("--pixel-diff", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "pixel_diff.js"))
     args = ap.parse_args()
@@ -140,20 +167,29 @@ def main():
             annotated.append({**r, "near": near, "style_hints": hints})
         pixel["regions_annotated"] = annotated
 
+    data = data_presence(legacy, react)
     ratio = pixel.get("ratio") if isinstance(pixel, dict) else None
-    pixel_ok = (ratio is not None) and (ratio <= args.pixel_threshold) and not pixel.get("dimMismatch") and not pixel.get("error")
+    size_ok = isinstance(pixel, dict) and not pixel.get("dimMismatch") and not pixel.get("error")
+    pixel_ok = (ratio is not None) and (ratio <= args.pixel_threshold) and size_ok
+    # record mode: data is identical -> GATE on exact pixels. live mode: data drifts -> pixel advisory,
+    # gate on structure + style + data-presence + comparable size (no exact pixel requirement).
+    pixel_gates = pixel_ok if args.data_mode == "record" else size_ok
     gate = {
-        "pass": dom["summary"]["critical"] == 0 and pixel_ok,
+        "pass": dom["summary"]["critical"] == 0 and data["ok"] and pixel_gates,
+        "data_mode": args.data_mode,
         "critical_structural": dom["summary"]["critical"],
+        "data_present": data["ok"],
         "pixel_ratio": ratio,
         "pixel_threshold": args.pixel_threshold,
         "pixel_ok": bool(pixel_ok),
+        "pixel_gated": args.data_mode == "record",
     }
-    result = {"name": args.name, "gate": gate, "dom": dom, "pixel": pixel}
+    result = {"name": args.name, "gate": gate, "dom": dom, "pixel": pixel, "data": data}
     json.dump(result, open(os.path.join(args.out_dir, args.name + ".parity-report.json"), "w", encoding="utf-8"), indent=1)
     open(os.path.join(args.out_dir, args.name + ".parity-report.md"), "w", encoding="utf-8").write(build_report_md(args.name, result))
 
-    print(json.dumps({"name": args.name, "pass": gate["pass"], "critical_structural": gate["critical_structural"],
+    print(json.dumps({"name": args.name, "pass": gate["pass"], "data_mode": args.data_mode,
+                      "critical_structural": gate["critical_structural"], "data_present": data["ok"],
                       "pixel_ratio": ratio, "report": os.path.join(args.out_dir, args.name + ".parity-report.md")}, indent=1))
     sys.exit(0 if gate["pass"] else 2)
 

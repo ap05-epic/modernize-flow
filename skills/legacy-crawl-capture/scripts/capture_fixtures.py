@@ -1,31 +1,56 @@
 #!/usr/bin/env python3
 """
-capture_fixtures.py — turn captured network traffic into MSW fixtures + handlers.
+capture_fixtures.py — turn REAL recorded responses into MSW replay handlers (record mode).
 
-Input  : one or more <name>.network.json files produced by capture_screen.py.
+Input  : --har <responses.har>  (preferred — the REAL backend responses recorded by
+         capture_screen.py --record-har), and/or --network <name>.network.json files.
 Output : <out>/fixtures.json     — { "<METHOD> <pathname>": {status, content_type, body, query_seen[]} }
-         <out>/handlers.ts       — MSW v2 handlers returning those fixtures (same endpoint paths).
+         <out>/handlers.ts       — MSW v2 handlers replaying those responses (same endpoint paths).
 
-This is what lets the React replica render the SAME data the legacy screenshot was taken with,
-with NO live backend (non-negotiable: "renders faithfully on its own"). Same paths are wired, so
-flipping MSW off later hits the real backend unchanged (data-wiring QA).
+This is the RECORD-mode data layer: the React replica renders the SAME REAL data the legacy screen
+showed, with no live backend and NO hand-authored/fake fixtures. Same paths are wired, so live mode
+(Vite proxy, MSW off) hits the real backend unchanged.
 
-By default only data calls (xhr/fetch) become fixtures; the legacy HTML document response is the page
-itself, not a data call the React app makes. Use --include-documents to keep them too.
-Deterministic; no browser needed.
+By default the top-level HTML document response is skipped (it's the page, not a data call the React
+app makes); use --include-documents to keep it. Deterministic; no browser needed.
 """
-import argparse, json, os, sys
+import argparse, base64, json, os, sys
 from urllib.parse import urlsplit
 
 
 def load_records(paths):
     recs = []
-    for p in paths:
+    for p in paths or []:
         try:
             data = json.load(open(p, encoding="utf-8"))
             recs.extend(data if isinstance(data, list) else data.get("network", []))
         except Exception as e:
             print(f"[warn] {p}: {e}", file=sys.stderr)
+    return recs
+
+
+def har_records(paths):
+    """Convert Playwright HAR entries -> the same rec shape build() consumes (REAL responses)."""
+    recs = []
+    for p in paths or []:
+        try:
+            log = json.load(open(p, encoding="utf-8")).get("log", {})
+        except Exception as e:
+            print(f"[warn] {p}: {e}", file=sys.stderr); continue
+        for e in log.get("entries", []):
+            req, resp = e.get("request", {}), e.get("response", {})
+            content = resp.get("content", {})
+            mime = content.get("mimeType", "") or ""
+            text = content.get("text")
+            if text is not None and content.get("encoding") == "base64":
+                try:
+                    text = base64.b64decode(text).decode("utf-8", "replace")
+                except Exception:
+                    text = None
+            recs.append({"method": req.get("method", "GET"), "url": req.get("url", ""),
+                         "status": resp.get("status", 200),
+                         "resource_type": "document" if mime.startswith("text/html") else "xhr",
+                         "content_type": mime, "body": text})
     return recs
 
 
@@ -53,24 +78,35 @@ def ts_literal(v):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build MSW fixtures + handlers from captured network.json files.")
-    ap.add_argument("--network", nargs="+", required=True, help="One or more *.network.json files.")
-    ap.add_argument("--out", required=True, help="Output directory (fixtures.json + handlers.ts).")
-    ap.add_argument("--include-documents", action="store_true", help="Also fixture the top-level HTML document responses.")
+    ap = argparse.ArgumentParser(description="Build MSW replay handlers from REAL recorded responses (HAR) and/or network.json.")
+    ap.add_argument("--har", nargs="+", help="One or more responses.har files (real responses from capture_screen.py --record-har). Preferred.")
+    ap.add_argument("--network", nargs="+", help="One or more *.network.json files (alternative source).")
+    ap.add_argument("--out", help="Output directory (fixtures.json + handlers.ts). Required for a real run.")
+    ap.add_argument("--include-documents", action="store_true", help="Also include the top-level HTML document responses.")
     ap.add_argument("--self-check", action="store_true")
     args = ap.parse_args()
 
     if args.self_check:
-        sample = [{"method": "GET", "url": "http://h/BAA/fateamprofile.do?fa=AB10", "status": 200,
-                   "resource_type": "xhr", "content_type": "application/json", "body": '{"rows":[1,2]}'}]
-        os.makedirs(args.out, exist_ok=True)
-        fx = build(sample, False)
-        assert "GET /BAA/fateamprofile.do" in fx, fx
-        assert fx["GET /BAA/fateamprofile.do"]["body"] == {"rows": [1, 2]}
-        print(json.dumps({"self_check": "ok", "keys": list(fx)}, indent=1))
+        net = [{"method": "GET", "url": "http://h/BAA/fateamprofile.do?fa=AB10", "status": 200,
+                "resource_type": "xhr", "content_type": "application/json", "body": '{"rows":[1,2]}'}]
+        fx = build(net, False)
+        assert "GET /BAA/fateamprofile.do" in fx and fx["GET /BAA/fateamprofile.do"]["body"] == {"rows": [1, 2]}, fx
+        har = {"log": {"entries": [{"request": {"method": "GET", "url": "http://h/api/comp?fa=AB10"},
+                "response": {"status": 200, "content": {"mimeType": "application/json", "text": '{"ok":true}'}}}]}}
+        import tempfile
+        tf = os.path.join(tempfile.gettempdir(), "j2r_selfcheck.har")
+        json.dump(har, open(tf, "w"))
+        fx2 = build(har_records([tf]), False)
+        os.remove(tf)
+        assert "GET /api/comp" in fx2 and fx2["GET /api/comp"]["body"] == {"ok": True}, fx2
+        print(json.dumps({"self_check": "ok", "network_keys": list(fx), "har_keys": list(fx2)}))
         return
 
-    recs = load_records(args.network)
+    if not args.out:
+        raise SystemExit("--out is required (or use --self-check)")
+    if not (args.har or args.network):
+        raise SystemExit("pass --har (preferred) and/or --network")
+    recs = har_records(args.har) + load_records(args.network)
     fixtures = build(recs, args.include_documents)
     os.makedirs(args.out, exist_ok=True)
     json.dump(fixtures, open(os.path.join(args.out, "fixtures.json"), "w", encoding="utf-8"), indent=1)

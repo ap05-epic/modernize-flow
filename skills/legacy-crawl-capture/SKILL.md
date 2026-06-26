@@ -1,6 +1,6 @@
 ---
 name: legacy-crawl-capture
-description: Discover every screen in a legacy JSP/Struts web app and capture each screen state as comparable evidence (screenshot + normalized DOM model + a11y + network), plus turn captured network traffic into MSW fixtures. Use when converting a legacy JSP/Java/Struts UI to React and you need to enumerate all screens and capture the source-of-truth evidence the jsp2react agents replicate and verify against. Reuses the pod's webapp-snapshot (login/screenshots) and webapp-testing (Playwright/server) skills; adds discovery, normalized capture, and fixture generation that those skills do not provide.
+description: Parse the JSP source into a source-model, discover every view in a legacy JSP/Struts web app (static routes AND AJAX-loaded views, reached from the start), and capture each view as comparable evidence (screenshot + normalized DOM model + a11y + the REAL backend responses via HAR) with error-page quarantine. Use when converting a legacy JSP/Java/Struts UI to React and you need the source-driven, source-of-truth evidence the jsp2react agents build from and verify against. Reuses the pod's webapp-snapshot (login/screenshots) and webapp-testing (Playwright/server) skills; adds JSP source extraction, AJAX view discovery, normalized capture, and real-response recording those skills do not provide.
 ---
 
 # legacy-crawl-capture
@@ -8,11 +8,15 @@ description: Discover every screen in a legacy JSP/Struts web app and capture ea
 Source-of-truth capture for the **jsp2react** system. fig2code extracts a static Figma design; this
 skill extracts a **live, running legacy screen** — and the original JSP/Struts source behind it.
 
-It does three things the pod's existing skills don't:
-1. **Discover** the full screen graph from `struts-config.xml` + JSP scan (so nothing is missed).
-2. **Capture** each screen state into a *normalized model* that can be diffed deterministically
-   against the React render (the SAME script captures both sides → always comparable).
-3. **Fixture** the captured network so the React replica renders identical data with no backend.
+It is **source-driven** (v2): the builder builds from parsed JSP source, not from a screenshot.
+1. **Parse** each JSP into a `source-model.json` (loops/forms/labels/AJAX endpoints) — the BUILD INPUT
+   (`extract_jsp.py`; see `references/jsp-source-extraction.md`).
+2. **Discover** every view — static routes (`crawl_screens.py`) AND AJAX-loaded views reached from the
+   start (`crawl_ajax.py` → `viewgraph.json`; see `references/ajax-crawl-and-viewgraph.md`).
+3. **Capture** each view into a *normalized model* diffable against the React render (SAME script both
+   sides) — with semantic readiness and **error-page quarantine**.
+4. **Record the REAL backend responses** (`capture_screen.py --record-har`) and turn them into replay
+   handlers (`capture_fixtures.py --har`) — real data, no hand-authored fakes.
 
 > Always run a script with `--help` (and `--self-check` where offered) before first use — the CLI is
 > the contract. These are black-box tools; do not read the source unless customizing.
@@ -30,6 +34,25 @@ It does three things the pod's existing skills don't:
 
 ## Scripts
 
+### extract_jsp.py — parse a JSP into `source-model.json` (the BUILD INPUT)
+```bash
+python scripts/extract_jsp.py --jsp <webapp>/jsp/fateamprofile.jsp --webapp-dir <webapp> \
+  --out <evidence>/<id_state>/source-model.json        # --self-check for a no-file sanity run
+```
+Pragmatic regex parser (stdlib only). Extracts taglibs, includes/Tiles, JSTL loops/conditionals,
+`<html:*>` form fields, AJAX endpoints (JSP + referenced `*.js`), and message keys. The builder builds
+the React structure FROM this; the screenshot only verifies. See `references/jsp-source-extraction.md`.
+
+### crawl_ajax.py — discover AJAX views from the START → `viewgraph.json`
+```bash
+python scripts/crawl_ajax.py --start-url <post-login summary> --auth-state auth_state.json \
+  --merge static-viewgraph.json --out viewgraph.json --max-states 40 --max-depth 3
+```
+Stateful Playwright crawl: clicks/hovers every interactive element from the start, follows AJAX, and
+records each view with its **full from-start click-path** + triggered endpoint. Solves "one link = 30
+views" and enforces "never open a deep link directly." Reconciles static + (optional Crawljax) states.
+See `references/ajax-crawl-and-viewgraph.md`.
+
 ### crawl_screens.py — enumerate every screen (deterministic-first)
 ```bash
 # Authoritative inventory from source (no browser): actions + JSPs + links, reconciled by family.
@@ -38,9 +61,9 @@ python scripts/crawl_screens.py \
   --webapp-dir   <…>/BAA/src/main/webapp \
   --out screens.json
 
-# Optional: also harvest the live reachable set (bounded BFS) once logged in.
-python scripts/crawl_screens.py --webapp-dir <…> --runtime-url <summary-url> \
-  --auth-state auth_state.json --max-pages 60 --out screens.json
+# Also emit a viewgraph of the static routes to reconcile with the AJAX crawl (crawl_ajax.py --merge):
+python scripts/crawl_screens.py --struts-config <…> --webapp-dir <…> \
+  --out screens.json --emit-viewgraph static-viewgraph.json
 ```
 Vendor/build dirs (`pdfjs`, `dojo`, `jquery*`, `lib`, `locale`, `node_modules`, `coverage`,
 `target`, `dist`, `build`) are pruned automatically. `screens.json.reconciliation` is the
@@ -53,7 +76,7 @@ It enforces *semantic readiness* so the bundle reflects a **usable** screen, not
 ```bash
 # Driven by a per-screen capture profile (preferred — same contract reused for the React side):
 python scripts/capture_screen.py --profile profiles/f010_fasummary.json \
-  --out-dir work/screenshots --name f010_default --auth-state auth_state.json
+  --out-dir work/evidence/f010_default --name legacy --auth-state auth_state.json --record-har
 
 # Or fully on the CLI:
 python scripts/capture_screen.py --url <legacy-screen-url> \
@@ -68,6 +91,10 @@ readiness checks ran and passed, asset statuses, settle time, key text markers, 
 `usable` flag). **`usable` is true only when every configured readiness check passed AND no expected
 asset failed** — a `usable:false` PNG is not admissible parity evidence.
 
+- **`--record-har`** saves `<name>.har` — the REAL backend responses for record-mode replay (no fakes).
+- **Error-page quarantine:** the document HTTP status + `errorSignatures` are checked; an error/wrong page
+  is written under `_rejected/` and flagged `rejected:true`, NOT promoted as the view's evidence. Look
+  around again instead of accepting it. (`usable` also requires it not be an error page.)
 - **`--profile <file>`** loads a capture contract (`templates/capture-profile.json` schema). CLI flags
   override profile fields. The builder reuses the **same profile** for the React capture → comparable.
 - **Same `--viewport`** for legacy and React — parity depends on it.
@@ -82,36 +109,43 @@ asset failed** — a `usable:false` PNG is not admissible parity evidence.
 See `references/runtime-readiness-and-auth.md` for *why* each readiness check exists, the
 canonical-vs-misleading route rule, localhost/non-SSO troubleshooting, and timing calibration.
 
-### capture_fixtures.py — captured traffic → MSW fixtures + handlers
+### capture_fixtures.py — REAL recorded responses → MSW replay handlers (record mode)
 ```bash
-python scripts/capture_fixtures.py --network work/screenshots/f010_default.network.json \
-  --out <react-app>/src/mocks
+python scripts/capture_fixtures.py --har work/evidence/f010_default/legacy.har \
+  --out <react-app>/src/mocks/f010_default        # or --network <…>.network.json
 ```
-Writes `fixtures.json` + `handlers.ts` (MSW v2) keyed by `METHOD pathname`. Data calls (xhr/fetch)
-only by default; `--include-documents` to also keep HTML responses. See react-replica-kit for wiring.
+Writes `fixtures.json` + `handlers.ts` (MSW v2) keyed by `METHOD pathname`, returning the REAL recorded
+bytes (no hand-authored data). This is the **record-mode** data layer; **live-mode** views skip it and use
+the Vite proxy instead (see react-replica-kit `references/backend-data-modes.md`).
 
-## Typical analyzer flow
+## Typical analyzer flow (v2 — source-driven)
 ```
-PRE-CAPTURE TRIAGE            → app reachable? auth end-to-end? assets 200? one page hydrates?
-                                (see references/runtime-readiness-and-auth.md §1 — do this ONCE first)
-save_auth_state.py            → auth_state.json            (login skill; once)
-crawl_screens.py              → screens.json               (full inventory)
-for each screen/state:
-  write capture profile       → profiles/<screen>.json     (canonical route + readiness contract)
-  capture_screen.py --profile → png + model + network + .capture.json (usable?)   (evidence bundle)
-capture_fixtures.py           → src/mocks/{fixtures,handlers}
-→ analyzer writes spec.md (incl. per-screen capture contract), seeds STATUS.md, updates MANIFEST.json
+PRE-CAPTURE TRIAGE            → reachable? auth e2e? canonical route? assets 200? one view hydrates?
+                                (references/runtime-readiness-and-auth.md §1 — do this ONCE first)
+save_auth_state.py            → auth_state.json                              (login skill; once)
+extract_theme.py              → evidence/theme/{tokens.json,theme.css}       (colors/fonts from source)
+crawl_screens.py --emit-viewgraph + crawl_ajax.py --merge → viewgraph.json   (static + AJAX views)
+for each view:
+  extract_jsp.py              → <view>/source-model.json                     (the BUILD INPUT)
+  write capture profile (workflow = from-start click-path) → profiles/<view>.json
+  capture_screen.py --profile --record-har → <view>/{legacy.png,model.json,legacy.har,capture.json}
+                                              (usable? error pages → _rejected/)
+  capture_fixtures.py --har   → src/mocks/<view>  (record-mode replay; live-mode views skip)
+→ analyzer writes spec.md (source model + capture contract), seeds STATUS.md, MANIFEST.json,
+  then build_index.py → evidence/INDEX.html (the navigable human index)
 ```
-Skip triage and you risk capturing ~220 screens of confident-wrong evidence (unstyled pages, error
-routes behind misleading `.do` links, screens captured before async data hydrated).
+Skip triage and you risk capturing hundreds of views of confident-wrong evidence (unstyled pages, error
+routes behind misleading `.do` links, views captured before async data hydrated).
 
 ## Reference
-- `references/runtime-readiness-and-auth.md` — **read before first capture.** Pre-capture triage,
-  "page loaded ≠ screen usable" + the semantic-readiness order, BAA timing calibration, canonical-vs-
-  misleading routes, localhost/non-SSO troubleshooting, styled-vs-unstyled detection, the per-screen
-  capture contract, source-backed debugging before declaring `blocked`, and reset-evidence recovery.
-- `references/struts-jsp-endpoint-mapping.md` — how to derive each screen's endpoints and data
-  contracts from JSP/Struts source across the 3 backend layers (Struts `.do`, Spring REST,
-  WS/feign→mainframe), and how that maps to fixtures + React data wiring.
-- `templates/capture-profile.json` (repo root `templates/`) — the per-screen capture-contract schema
-  consumed by `capture_screen.py --profile` and reused by the builder for the React capture.
+- `references/jsp-source-extraction.md` — the `source-model.json` schema and how the builder builds from it.
+- `references/ajax-crawl-and-viewgraph.md` — stateful AJAX discovery, the from-start rule, the `viewgraph.json`
+  schema, and optional Crawljax normalization.
+- `references/runtime-readiness-and-auth.md` — **read before first capture.** Triage, semantic readiness,
+  timing calibration, canonical-vs-misleading routes, localhost/non-SSO, styled detection, error quarantine,
+  source-backed debugging before `blocked`, recovery.
+- `references/struts-jsp-endpoint-mapping.md` — deriving each view's endpoints across the 3 backend layers
+  (Struts `.do`, Spring REST, WS/feign→mainframe) and how that maps to the recorded responses + data wiring.
+- `templates/capture-profile.json` (repo root `templates/`) — the per-view capture-contract schema consumed
+  by `capture_screen.py --profile` and reused by the builder for the React capture.
+
