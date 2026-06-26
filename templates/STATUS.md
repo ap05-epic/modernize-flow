@@ -5,17 +5,22 @@
   - jsp2react-analyzer SEEDS it (config + screen inventory + coverage matrix).
   - jsp2react-builder CONSUMES it, implements ONE screen per iteration, and updates it.
 
+  Autonomy: the HUMAN does NOT hand-fill this file. The analyzer CREATES and seeds it on first run, from
+  the kickoff prompt (legacy URL + login) plus repo discovery and sensible defaults (see the analyzer
+  agent §2). A human edits it only to OVERRIDE a default or steer scope. The <ANGLE_BRACKET> placeholders
+  below show what the analyzer fills in — they are not a to-do list for a person.
+
   Rules:
   - Always read this file before doing anything. It tells you what is done and what is next.
   - Never advance "Current Iteration" past a screen whose parity is still failing and fixable.
   - Status values are STRICT (see legend). Never write `verified` without a passing parity report.
   - Keep this file small. Detail lives in spec.md and the per-screen artifacts.
-  Replace every <ANGLE_BRACKET> placeholder. Delete the example rows once real ones exist.
 -->
 
 # jsp2react — Run Status
 
-## 1. Project Config  (set once by analyzer; treat as runtime configuration)
+## 1. Project Config  (analyzer fills this on first run; human only overrides)
+## ↳ Human-provided via the kickoff prompt: **Legacy app URL** + **login**. Everything else: discovered or defaulted.
 
 | Key | Value |
 |---|---|

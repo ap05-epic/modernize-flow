@@ -14,10 +14,10 @@ git clone https://github.com/ap05-epic/jsp2react.git
 cd jsp2react
 bash install.sh        # copies skills+agents into ~/.copilot, installs pixel-diff deps, checks prereqs
 ```
-Then fill `templates/STATUS.md` §1–§3 (legacy URL, source path, target app path, login), and in Copilot
-run the **jsp2react-analyzer** agent, then **jsp2react-builder** repeatedly (exact prompts in
-[SETUP.md §6b](SETUP.md)). Prereqs the installer checks for: Node.js, Python 3 + Playwright.
-*(Later, `dc agent install jsp2react` replaces `install.sh`.)*
+Then in Copilot, run the **jsp2react-analyzer** agent and give it just the **legacy URL + how to log in** —
+it bootstraps `STATUS.md` itself (no hand-editing) and captures every screen. Then run **jsp2react-builder**
+repeatedly to build + verify one screen at a time (exact prompts in [SETUP.md §6b](SETUP.md)). Prereqs the
+installer checks for: Node.js, Python 3 + Playwright. *(Later, `dc agent install jsp2react` replaces `install.sh`.)*
 
 ## How it works (two agents, one contract, three skills)
 

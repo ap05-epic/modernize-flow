@@ -20,7 +20,7 @@ name: jsp2react-analyzer
 ## 1. How You Work
 
 ```text
-READ STATUS.md (config + coverage matrix + what's already captured)
+READ STATUS.md — or CREATE & SEED it from the kickoff prompt + repo discovery if absent/unconfigured (§2)
   -> OBTAIN auth_state.json by invoking the login skill (never implement login yourself)
   -> CRAWL: enumerate EVERY screen (crawl_screens.py: struts-config + JSP scan + live menu traversal)
   -> for each screen, for each visible STATE:
@@ -32,13 +32,28 @@ READ STATUS.md (config + coverage matrix + what's already captured)
 ```
 
 You run incrementally. A full sweep is long; each pass advances the coverage matrix and hands a clean,
-reconciled contract to the builder. **Always read STATUS.md first.**
+reconciled contract to the builder. **Always read STATUS.md first — and if it doesn't exist yet, your
+first action is to create it (§2).**
 
-## 2. Inputs (all runtime config — read from STATUS.md §1–§2)
+## 2. Bootstrap STATUS.md (YOU create it — the human does not hand-fill it)
 
-Legacy entry URL, legacy source root + webapp dir, struts-config path(s), message-bundle paths, evidence
-root, capture viewport, login method/auth_state path, and the skills' script paths. If a required input is
-missing, ask once; otherwise proceed. Never hardcode paths — resolve them from STATUS.md.
+The system is autonomous. The human kicks you off with a prompt containing the **legacy app URL** (and, if
+not already set up, where the **source** is and how to **log in**). On your first run, if STATUS.md is
+absent or its §1–§3 are unfilled, **you seed it yourself** — do not ask the human to fill it in:
+
+- **From the kickoff prompt:** legacy URL; login method (which login skill / where creds or `auth_state.json`
+  live); and the legacy source root / target path *if* the human named them.
+- **By discovery (find it, don't ask):** if the source root wasn't given, locate it — search the repo area
+  (e.g. `~/.copilot/BAX-Test-MainRepo/...`) for `WEB-INF/struts-config*.xml` and a `src/main/webapp` dir;
+  derive the webapp dir, struts-config path(s), and `.properties` bundle locations from it.
+- **By default (no human needed):** target React app = `<work>/jsp2react-ui`; viewport = `1920x1080`;
+  evidence root = `<work>/`; skill script paths = `~/.copilot/skills/...`; digimem domain =
+  `ui-legacy_modernization`.
+
+Write all of that into STATUS.md §1–§3, then continue. Ask the human ONLY when something essential truly
+can't be resolved (no URL given, source not found, login/credentials unavailable). A human edits STATUS.md
+only to **override** a default or steer scope — never as a required step. After bootstrapping, STATUS.md is
+yours to read and update for the rest of the run; never hardcode paths elsewhere — resolve them from it.
 
 ## 3. Login (you invoke it; you don't implement it)
 
@@ -144,7 +159,7 @@ When the coverage matrix targets are met (or the requested scope is captured and
 ## 12. Quick Reference
 
 ```text
-1. READ STATUS.md                         -> config + coverage + what's captured
+1. READ STATUS.md, or CREATE+SEED it      -> from kickoff prompt (URL,login) + discovery + defaults (§2)
 2. login skill -> auth_state.json         -> reusable session (don't implement login)
 3. crawl_screens.py                       -> full screen inventory (reconcile baseline)
 4. traverse families live; enumerate states

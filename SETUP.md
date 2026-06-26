@@ -49,7 +49,7 @@ jsp2react/
 | checks | verifies Node, Python 3, Playwright are present | warns if anything's missing |
 
 Override the targets if your pod differs: `COPILOT_SKILLS_DIR=… COPILOT_AGENTS_DIR=… bash install.sh`.
-Templates are per‑run: copy `templates/STATUS.md` into your run folder and fill §1–§3.
+Templates are blueprints the **analyzer** copies and fills on its own — you don't edit them by hand (§5).
 
 > Paths aren't hardcoded anywhere — the scripts resolve everything from `STATUS.md §2` at run time.
 
@@ -95,16 +95,27 @@ Notes:
 - Alternative to the manual step: run `verify_screen.py --pixel-diff <app>/node_modules/.../pixel_diff.js`
   or set `NODE_PATH` to the app's `node_modules`. The skill‑local install above is simplest.
 
-## 5. Runtime configuration (fill in `STATUS.md`)
+## 5. Configuration — the analyzer fills `STATUS.md`, not you
 
-Before the first run, set `STATUS.md §1–§3`:
-- **Legacy:** entry URL, source root, webapp dir, `struts-config` path(s), message‑bundle paths.
-- **Capture:** viewport (use ONE value everywhere, e.g. `1920x1080`), evidence root.
-- **Login:** method + `auth_state.json` path (see §6 step 2).
-- **Target:** React app path + run command.
-- **Tool paths:** the `~/.copilot/skills/*/scripts` locations and the `digimem` path.
+This is autonomous: **you do not hand-fill STATUS.md.** The **analyzer agent creates and seeds it** on its
+first run (kickoff prompt + repo discovery + defaults). The only things a human supplies — once, in the
+kickoff prompt — are:
 
-## 6. First‑run smoke test (prove the pipeline end‑to‑end on ONE screen)
+- **Legacy app URL** — the entry point; can't be guessed.
+- **Login** — how to authenticate: point at the login skill / where credentials or `auth_state.json` live
+  (the analyzer *invokes* login, it doesn't implement it). A one-time SSO step may be needed (a pre-step).
+- *(optional)* the legacy **source root** and **target app path** — omit them and the analyzer discovers
+  the source and defaults the target (`<work>/jsp2react-ui`).
+
+Everything else in §1–§3 (webapp dir, struts-config, bundles, viewport `1920x1080`, evidence root, tool
+paths, digimem domain) is discovered or defaulted. Edit STATUS.md afterward only to **override** a default
+(e.g. a per-screen pixel threshold) or to scope the run. → Normal operation is just the prompts in §6b.
+
+## 6. First‑run smoke test — OPTIONAL manual wiring check (one screen, run by hand)
+
+This proves the pipeline works on the pod *before* you trust the agents with a full sweep. It's a manual
+operator check using the scripts directly; the **autonomous run is §6b** (you just give the analyzer the
+URL). Skip to §6b if you'd rather let Copilot do it.
 
 ```bash
 # 0. sanity: every script answers --help / --self-check without a browser
@@ -155,12 +166,16 @@ agents (by name / trigger phrase). Suggested prompts:
 > jsp2react agents are discoverable, then run the §6 self-checks (`--self-check` / `--help`) and report
 > results. Don't crawl anything yet."
 
-**Step B — analyze (run once; it builds the contract for ALL screens):**
-> "Use the **jsp2react-analyzer** agent. First fill STATUS.md from these inputs — legacy URL=`<…>`, legacy
-> source root=`<…>`, struts-config=`<…>`, target React app path=`<…>`, viewport=1920x1080, login via
-> webapp-snapshot/save_auth_state.py (auth_state at `<…>`). Then log in, crawl and capture every screen,
-> map each screen's endpoints, generate MSW fixtures, and write spec.md + STATUS.md + MANIFEST.json. Begin
-> with the shell + one family, then continue across all families until the coverage matrix is met."
+**Step B — analyze (run once; it builds the contract for ALL screens). You give it only the URL + login:**
+> "Use the **jsp2react-analyzer** agent. Legacy app URL = `<…>`. Log in via
+> webapp-snapshot/save_auth_state.py (creds/auth_state at `<…>`). The legacy source is at `<…>` *(omit this
+> line to let it discover the source)*. **Bootstrap STATUS.md yourself**, then log in, crawl and capture
+> every screen, map each screen's endpoints, generate MSW fixtures, and write spec.md + STATUS.md +
+> MANIFEST.json. Begin with the shell + one family, then continue across all families until the coverage
+> matrix is met."
+
+That's the whole human input: the **URL** and **how to log in** (source path optional). The analyzer
+discovers/derives everything else into STATUS.md — you never hand-edit it.
 
 **Step C — build (run repeatedly; one screen per turn):**
 > "Use the **jsp2react-builder** agent. Read STATUS.md and implement the next screen end to end: port it

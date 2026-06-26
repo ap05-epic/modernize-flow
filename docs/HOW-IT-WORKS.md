@@ -86,7 +86,8 @@ The same endpoint addresses are still wired up, so you *can* point it at the rea
 
 ## What you actually run
 
-Place the files, fill in a few settings (the legacy URL, where the code is, etc.), then tell Copilot to
-run the **analyzer** once (it captures everything) and the **builder** repeatedly (one screen at a time).
-The exact prompts are in [SETUP.md §6b](../SETUP.md). A side-by-side review page lets you and your
-colleagues compare originals against the React replicas.
+Install once (`bash install.sh`), then tell Copilot to run the **analyzer** with just the **legacy URL and
+how to log in**. The analyzer sets up its own tracking file (STATUS.md) and captures everything — you don't
+configure anything by hand. Then run the **builder** repeatedly (one screen at a time). The exact prompts
+are in [SETUP.md §6b](../SETUP.md). A side-by-side review page lets you and your colleagues compare
+originals against the React replicas.
