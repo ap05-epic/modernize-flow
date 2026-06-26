@@ -1,0 +1,17 @@
+# Runtime products created on the pod (NOT part of the system itself)
+work/
+**/auth_state.json
+**/screens.json
+**/fixtures.json
+
+# The scaffolded React app + deps + build output
+node_modules/
+dist/
+build/
+.vite/
+
+# Python / OS noise
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

@@ -1,0 +1,88 @@
+{
+  "_schema": {
+    "purpose": "Auto-maintained ledger of every captured artifact, keyed by screen+state. Makes traceability automatic instead of hand-listed. Written by legacy-crawl-capture scripts; parity fields updated by parity-verify; read by both agents to know what evidence exists.",
+    "invariants": [
+      "Every file under the evidence root (screenshots/, dom/, fixtures/, parity/) appears in exactly one entry.",
+      "Every screen in STATUS.md §4 with status >= 'analyzed' has an entry here.",
+      "sha256 lets a re-run detect changed captures; absent file or mismatch => re-capture."
+    ],
+    "screen_entry_shape": {
+      "id": "F0xx (matches STATUS.md / spec.md)",
+      "family": "shell|fa|cefs|latam|nnm|shhp|contentlet|ipad|...",
+      "screen": "human name",
+      "route": "legacy action/url, e.g. fateamprofile.do",
+      "reach_path": "runtime steps to navigate here (mirrors spec.md)",
+      "states": [
+        {
+          "state": "default|empty|error|tab:<name>|modal:<name>|...",
+          "viewport": "1920x1080",
+          "captured_at": "ISO-8601 (stamped by the script at run time)",
+          "artifacts": {
+            "screenshot": "screenshots/f0xx_default.png",
+            "dom": "dom/f0xx_default.dom.html",
+            "computed": "dom/f0xx_default.computed.json",
+            "a11y": "dom/f0xx_default.a11y.json",
+            "network": "fixtures/f0xx_default.network.json",
+            "fixture": "fixtures/f0xx_default.fixture.json"
+          },
+          "sha256": { "screenshot": "<hex>", "dom": "<hex>" },
+          "endpoints": [
+            { "method": "GET", "path": "/BAA/fateamprofile.do", "layer": "struts", "fixture_key": "fateamprofile" }
+          ],
+          "parity": {
+            "status": "not-run|fail|pass",
+            "report": "parity/f0xx_default.parity-report.json",
+            "side_by_side": "parity/f0xx_default.side-by-side.png",
+            "pixel_mismatch_ratio": null,
+            "critical_deltas": null,
+            "last_run": null
+          }
+        }
+      ]
+    }
+  },
+
+  "run": {
+    "project": "<project name>",
+    "legacy_url": "<entry url>",
+    "evidence_root": "<abs path>",
+    "viewport": "1920x1080",
+    "generated_by": "legacy-crawl-capture",
+    "schema_version": 1
+  },
+
+  "screens": [
+    {
+      "id": "F000",
+      "family": "shell",
+      "screen": "Login page",
+      "route": "/BAA/jsp/login.jsp",
+      "reach_path": "open entry URL (pre-auth)",
+      "states": [
+        {
+          "state": "default",
+          "viewport": "1920x1080",
+          "captured_at": "<stamped at run time>",
+          "artifacts": {
+            "screenshot": "screenshots/f000_default.png",
+            "dom": "dom/f000_default.dom.html",
+            "computed": "dom/f000_default.computed.json",
+            "a11y": "dom/f000_default.a11y.json",
+            "network": "fixtures/f000_default.network.json",
+            "fixture": "fixtures/f000_default.fixture.json"
+          },
+          "sha256": { "screenshot": "<hex>", "dom": "<hex>" },
+          "endpoints": [],
+          "parity": {
+            "status": "not-run",
+            "report": null,
+            "side_by_side": null,
+            "pixel_mismatch_ratio": null,
+            "critical_deltas": null,
+            "last_run": null
+          }
+        }
+      ]
+    }
+  ]
+}

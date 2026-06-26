@@ -1,0 +1,166 @@
+# SETUP — standing up jsp2react on the pod (by hand)
+
+Everything here is plain text. Copy the `jsp2react/` tree to the pod, place the files, install three
+open‑source packages, fill in `STATUS.md`, and run the smoke test. No auto‑install, no auto‑discovery.
+
+## 1. File tree (what you're copying)
+
+```
+jsp2react/
+├── README.md
+├── SETUP.md
+├── agents/
+│   ├── jsp2react-analyzer.md
+│   └── jsp2react-builder.md
+├── skills/
+│   ├── legacy-crawl-capture/
+│   │   ├── SKILL.md
+│   │   ├── scripts/{crawl_screens.py, capture_screen.py, capture_fixtures.py}
+│   │   └── references/struts-jsp-endpoint-mapping.md
+│   ├── parity-verify/
+│   │   ├── SKILL.md
+│   │   ├── scripts/{verify_screen.py, dom_diff.py, pixel_diff.js}
+│   │   └── references/parity-thresholds.md
+│   └── react-replica-kit/
+│       ├── SKILL.md
+│       ├── scripts/{scaffold_app.sh, serve_review.py}
+│       └── references/{jsp-to-react-mapping.md, css-porting.md}
+└── templates/{STATUS.md, spec.md, MANIFEST.json}
+```
+
+## 2. Where each file goes on the pod
+
+| File(s) | Destination | Why |
+|---|---|---|
+| `skills/*` (whole folders) | `~/.copilot/skills/` (i.e. `~/.copilot/skills/legacy-crawl-capture/`, …) | same place as the existing `webapp-snapshot`, `webapp-testing`, `digimem`, `playwright-cli` skills |
+| `agents/*.md` | wherever your Copilot CLI discovers custom agents (the same location as your existing `baa-*` agents) | Copilot loads agent manuals from there |
+| `templates/*` | copy into each run's working dir as `STATUS.md`, `spec.md`, `MANIFEST.json` (the analyzer seeds them) | they are per‑project state, not global |
+
+> The exact agents directory and the `~/.copilot/skills` path are **runtime configuration** — if your pod
+> uses different locations, use those. Nothing in the code hardcodes these; scripts are resolved via paths
+> in `STATUS.md §2`.
+
+## 3. Prerequisites already on the pod (verify, don't install)
+
+- **Python 3** with **Playwright** (`webapp-testing` uses it). If missing: `pip install playwright && playwright install chromium`.
+- **Node 18+ / npm** (for the React app, Vite, and `pixel_diff.js`).
+- Skills present: `webapp-snapshot`, `webapp-testing`, `digimem` (and optionally `playwright-cli`).
+
+## 4. Open‑source dependencies to pull (manual, pinned)
+
+All MIT. The pod can pull these from GitHub/npm; here is exactly what and from where.
+
+| Package | Source | Install | Used by |
+|---|---|---|---|
+| `pixelmatch` | github.com/mapbox/pixelmatch | `npm i -D pixelmatch@^5.3.0` | `parity-verify/scripts/pixel_diff.js` |
+| `pngjs` | github.com/lukeapage/pngjs | `npm i -D pngjs@^7.0.0` | `parity-verify/scripts/pixel_diff.js` |
+| `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (fixture rendering) |
+| Vite + React + TS | github.com/vitejs/vite | `npm create vite@latest <app> -- --template react-ts` | `react-replica-kit/scripts/scaffold_app.sh` (runs this for you) |
+
+Notes:
+- `pixel_diff.js` works with pixelmatch v5 (CommonJS) **and** v6/v7 (ESM) — its loader tries `require`
+  then dynamic `import`. v5.3.0 is the simplest known‑good pin.
+- `scaffold_app.sh` installs `msw`, `pixelmatch`, `pngjs` into the React app and runs `npx msw init public/`.
+- `pixel_diff.js` can live with the React app's `node_modules` (run it with that app's `node`), or install
+  `pixelmatch`+`pngjs` once in the skill's own folder. Set `--node`/`--pixel-diff` on `verify_screen.py`
+  if paths differ.
+
+## 5. Runtime configuration (fill in `STATUS.md`)
+
+Before the first run, set `STATUS.md §1–§3`:
+- **Legacy:** entry URL, source root, webapp dir, `struts-config` path(s), message‑bundle paths.
+- **Capture:** viewport (use ONE value everywhere, e.g. `1920x1080`), evidence root.
+- **Login:** method + `auth_state.json` path (see §6 step 2).
+- **Target:** React app path + run command.
+- **Tool paths:** the `~/.copilot/skills/*/scripts` locations and the `digimem` path.
+
+## 6. First‑run smoke test (prove the pipeline end‑to‑end on ONE screen)
+
+```bash
+# 0. sanity: every script answers --help / --self-check without a browser
+python ~/.copilot/skills/legacy-crawl-capture/scripts/crawl_screens.py --self-check
+python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py --self-check
+python ~/.copilot/skills/parity-verify/scripts/dom_diff.py --self-check
+node   ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check          # needs pixelmatch+pngjs
+
+# 1. login once  (login skill — produces the session everything reuses)
+python ~/.copilot/skills/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json
+
+# 2. discover screens (deterministic inventory)
+python ~/.copilot/skills/legacy-crawl-capture/scripts/crawl_screens.py \
+  --struts-config <…>/WEB-INF/struts-config.xml --webapp-dir <…>/webapp --out work/screens.json
+
+# 3. capture ONE legacy screen
+python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py \
+  --url <screen-url> --out-dir work/screenshots --name f010_default \
+  --auth-state work/auth_state.json --viewport 1920x1080 --wait-ms 8000
+
+# 4. fixtures + scaffold the app
+python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_fixtures.py \
+  --network work/screenshots/f010_default.network.json --out <app>/src/mocks/f010
+bash   ~/.copilot/skills/react-replica-kit/scripts/scaffold_app.sh <app>     # if not scaffolded yet
+
+# 5. (builder builds src/screens/F010, runs `npm run dev`, then captures the react side)
+python ~/.copilot/skills/legacy-crawl-capture/scripts/capture_screen.py \
+  --url http://localhost:5173/#/f010 --out-dir work/react --name f010_default --viewport 1920x1080
+
+# 6. PROVE parity
+python ~/.copilot/skills/parity-verify/scripts/verify_screen.py \
+  --legacy-model work/screenshots/f010_default.model.json --legacy-png work/screenshots/f010_default.png \
+  --react-model  work/react/f010_default.model.json       --react-png  work/react/f010_default.png \
+  --out-dir work/parity --name f010_default --pixel-threshold 0.005
+# exit 0 = PASS. Read work/parity/f010_default.parity-report.md for concrete deltas if it FAILS.
+
+# review
+python ~/.copilot/skills/react-replica-kit/scripts/serve_review.py --work-dir work --react-base-url http://localhost:5173
+```
+
+## 6b. What to type into Copilot (after the files are placed)
+
+Copilot auto-discovers the skills; you invoke the agents the same way you invoke your existing `baa-*`
+agents (by name / trigger phrase). Suggested prompts:
+
+**Step A — sanity check the install (no crawling):**
+> "Read jsp2react/SETUP.md and README.md. Confirm the three skills are under ~/.copilot/skills and both
+> jsp2react agents are discoverable, then run the §6 self-checks (`--self-check` / `--help`) and report
+> results. Don't crawl anything yet."
+
+**Step B — analyze (run once; it builds the contract for ALL screens):**
+> "Use the **jsp2react-analyzer** agent. First fill STATUS.md from these inputs — legacy URL=`<…>`, legacy
+> source root=`<…>`, struts-config=`<…>`, target React app path=`<…>`, viewport=1920x1080, login via
+> webapp-snapshot/save_auth_state.py (auth_state at `<…>`). Then log in, crawl and capture every screen,
+> map each screen's endpoints, generate MSW fixtures, and write spec.md + STATUS.md + MANIFEST.json. Begin
+> with the shell + one family, then continue across all families until the coverage matrix is met."
+
+**Step C — build (run repeatedly; one screen per turn):**
+> "Use the **jsp2react-builder** agent. Read STATUS.md and implement the next screen end to end: port it
+> 1:1, wire its MSW fixtures, render it, run parity-verify, and fix from the parity report until it
+> PASSES, then update STATUS.md. Do one screen, then show me its parity-report.md and side-by-side.png."
+
+Then simply: **"Continue with the next screen."** (repeat) — or, once you trust it,
+**"Implement all remaining screens, verifying each before moving on; stop and tell me about any blocker."**
+
+**Review:**
+> "Run react-replica-kit/scripts/serve_review.py against the work dir and the running React app so I can
+> review legacy vs React side by side."
+
+## 7. Assumptions to verify on the pod (correct as needed)
+
+1. `~/.copilot/skills/` is the skills dir and your Copilot agents dir is where `baa-*` live. Adjust paths in
+   `STATUS.md §2` if not.
+2. The legacy source (incl. `struts-config*.xml`, `.properties`) is readable; set its path in `STATUS.md`.
+3. Login can yield a reusable `auth_state.json` (one manual SSO step may be needed — it's a pre‑step, not
+   part of the agent loop).
+4. Mainframe data is reached via WS/feign; **no live mainframe call is needed to render** (fixtures cover
+   it). Use the team's `cics-analysis` agent for COMMAREA/DB2 contracts only if that source is in scope.
+5. Pixel‑exact JSP↔React isn't realistic; the gate is **strict structural + thresholded pixel**. Tune
+   `--pixel-threshold` per screen in `STATUS.md §3` (see `parity-thresholds.md`), never the structural gate.
+6. Script CLIs here are the contract; if a reused pod skill's flags differ (OCR drift), run it with
+   `--help` and adjust — the agents are told to do this.
+
+## 8. If something fails
+- Script import/`--self-check` fails → missing Python/Playwright or Node deps (§3, §4).
+- Pixel ratio huge → almost always a capture mismatch (different viewport/data/fonts), not a real defect —
+  see `parity-thresholds.md` "Making the comparison fair".
+- Login redirects reappear mid‑run → session expired; re‑run step 1; note it in `STATUS.md §7`.
+- Crawl misses screens → check `screens.json.reconciliation`; add missing actions/JSPs as spec §4 entries.
