@@ -57,13 +57,29 @@ All MIT. The pod can pull these from GitHub/npm; here is exactly what and from w
 | `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (fixture rendering) |
 | Vite + React + TS | github.com/vitejs/vite | `npm create vite@latest <app> -- --template react-ts` | `react-replica-kit/scripts/scaffold_app.sh` (runs this for you) |
 
+### Nothing ships in the repo — `node_modules` is git‑ignored. Install on the pod:
+
+**Automatic (you don't do these by hand):** `scaffold_app.sh` installs **Vite + React + TS, `msw`,
+`pixelmatch`, and `pngjs` into the React app** and runs `npx msw init public/`. So scaffolding the app
+covers all four packages for the app itself.
+
+**One manual step — give the parity skill its own copy of the pixel libs.** `pixel_diff.js` lives in the
+`parity-verify` skill (a different folder than the React app), and Node resolves a script's `require()`
+from its own folder upward — not from the React app. So once, on the pod:
+```bash
+cd ~/.copilot/skills/parity-verify && npm init -y && npm i pixelmatch@5.3.0 pngjs@7
+```
+Verify it worked: `node ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check` → expects
+`{"self_check":"ok","identical_diff_pixels":0}`.
+
+**Not npm (must already be on the pod):** Node.js + npm; and **Python 3 + Playwright** for capture
+(`pip install playwright && playwright install chromium`). The Python scripts use the standard library only.
+
 Notes:
 - `pixel_diff.js` works with pixelmatch v5 (CommonJS) **and** v6/v7 (ESM) — its loader tries `require`
-  then dynamic `import`. v5.3.0 is the simplest known‑good pin.
-- `scaffold_app.sh` installs `msw`, `pixelmatch`, `pngjs` into the React app and runs `npx msw init public/`.
-- `pixel_diff.js` can live with the React app's `node_modules` (run it with that app's `node`), or install
-  `pixelmatch`+`pngjs` once in the skill's own folder. Set `--node`/`--pixel-diff` on `verify_screen.py`
-  if paths differ.
+  then dynamic `import`; v5.3.0 is the simplest pin.
+- Alternative to the manual step: run `verify_screen.py --pixel-diff <app>/node_modules/.../pixel_diff.js`
+  or set `NODE_PATH` to the app's `node_modules`. The skill‑local install above is simplest.
 
 ## 5. Runtime configuration (fill in `STATUS.md`)
 
