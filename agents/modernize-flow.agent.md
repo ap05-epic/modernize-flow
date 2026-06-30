@@ -88,7 +88,11 @@ Do this ONCE, then implement repeatedly. Order matters:
 
 - **Frontend**: capture the React render with the SAME profile, then
   `parity-verify/verify_screen.py --data-mode <record|live>` (0 critical DOM deltas + data present + record: pixel ≤
-  threshold / live: style match). Fix from the concrete delta; re-verify.
+  threshold / live: style match). Fix from the concrete delta; re-verify. **Capture BOTH sides ONLY with
+  `legacy-crawl-capture/capture_screen.py`** — it emits the normalized `.model.json` the DOM lane diffs (and, with
+  `--record-har`, the HAR). The generic `playwright-cli`/`webapp-testing` snapshot produces YAML/text that the DOM
+  lane CANNOT read — substituting it stalls verify_screen and leaves a pixel-only result. A high pixel ratio with no
+  DOM lane usually means the React side has no data wired yet, not a real design gap — wire the HAR replay first.
 - **Backend (FULL)**: curl the new endpoint, `verify_contract.py --har <view>/legacy.har --endpoint-json … --match
   /api/<flow>` (record = field+type+value parity; live = structure). Call it with the SAME session/entity context the
   capture used. Fix the gateway/DTO mapping from the delta; re-verify.

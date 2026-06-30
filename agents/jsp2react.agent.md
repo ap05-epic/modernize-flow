@@ -69,6 +69,10 @@ HAR) or `live` (Vite proxy to the legacy backend). No hand-authored data. See
 ## Verification (mandatory before `verified` — evidence, not eye)
 Capture the React render with the SAME profile; `parity-verify/verify_screen.py --data-mode <record|live>` (0 critical
 DOM deltas + data present + record: pixel ≤ threshold / live: style match). Fix from the concrete delta; re-verify.
+**Capture BOTH sides ONLY with `legacy-crawl-capture/capture_screen.py`** — it emits the `.model.json` the DOM lane
+diffs (and the HAR with `--record-har`); the generic `playwright-cli`/`webapp-testing` snapshot is YAML/text the DOM
+lane can't read, so it stalls verify_screen. A high pixel ratio with no DOM lane = React data not wired yet, not a
+design gap — wire the HAR replay first.
 Use webapp-testing/playwright-cli/webapp-snapshot for browser checks; record outcomes in `status.md`.
 
 ## status.md & spec.md, work units, blockers, demo, git
