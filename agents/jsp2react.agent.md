@@ -60,6 +60,10 @@ READ status.md
    session-sensitive / AJAX screens use **`--login --project --creds`** (fresh from-start login; a saved
    `auth_state` may be a stale single cookie; `--check-login` verifies auth first). Error pages quarantined to
    `_rejected/` — look around again, don't accept them. Confirm `usable:true` (`nav_error`/exit 2 = a stall).
+   **Entity-gated / AJAX screens** (deep URL errors or shows an empty shell — needs an account/entity selected)
+   MUST use a from-start **workflow** in the profile (login → select the entity → hydrate); never point `url` at the
+   deep screen URL. The submit may be a JS button/Enter, not `input[type=submit]` — find it in the `.dom.html`. Use
+   a BODY data label for `mustContain` (it scans `body.innerText`, not the title).
 7. **Contract**: `spec.md` (per-view source model + capture contract + data contract) and `status.md` (control-level
    inventory — one row per control/state). `build_index.py` → `evidence/INDEX.html`. Reconcile JSP/action counts.
 

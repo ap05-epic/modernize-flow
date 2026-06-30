@@ -72,6 +72,11 @@ Do this ONCE, then implement repeatedly. Order matters:
    `auth_state` is often a stale single cookie the server rotates; `--check-login` verifies auth first). Error
    pages are quarantined to `_rejected/` — **look around again, do not accept them**. Confirm `usable:true` (a
    `nav_error`/exit 2 means a stall — inspect the partial `_rejected/` artifacts, don't retry blindly).
+   **Entity-gated / AJAX-hydrated screens** (the deep URL errors or shows an empty shell because it needs an
+   account/entity/FA selected first) MUST be captured via a from-start **workflow** in the profile (login → search/
+   select the entity → contentlets hydrate) — NEVER point the profile `url` at the deep screen URL. The submit
+   control may be a JS button (`onclick=…`) or Enter-key, not `input[type=submit]` — find the real selector in the
+   captured `.dom.html`. Use a BODY data label for `mustContain` (it scans `body.innerText`, not the page title).
 7. **Write the contract**: `spec.md` (10 sections incl. stored-procedure mappings + the state/auth/session model)
    and `status.md` (control-level feature inventory: one row per dropdown/grid/sort/empty-state, FULL adds the
    backend rows). `build_index.py` → `evidence/INDEX.html`. Reconcile JSP/action/SP counts in spec §10.
