@@ -127,7 +127,10 @@ def run_workflow(page, steps, timeout, settle_ms):
     for st in steps:
         a = st.get("action")
         if a == "navigate":
-            page.goto(st["url"], wait_until="domcontentloaded")
+            try:
+                page.goto(st["url"], wait_until="commit")   # don't block on load events; settle() does the waiting
+            except Exception:
+                pass
             settle(page, timeout, settle_ms)
         elif a == "click":
             page.click(st["selector"])
@@ -545,8 +548,16 @@ def main():
                 if steps:
                     run_workflow(page, steps, rt_timeout, settle_ms)
                 else:
-                    page.goto(url, wait_until="domcontentloaded")
-                    settle(page, rt_timeout, settle_ms)                  # bounded — never hangs on a never-idle page
+                    # wait_until="commit" returns as soon as the response starts — it does NOT block on the
+                    # load/domcontentloaded event, which on some legacy pages never fires in time and would
+                    # ABORT the goto before the page runs its on-load JS (so async/contentlet AJAX never fires
+                    # and we capture only the bare shell). settle() + the readiness markers below then give the
+                    # page its window to parse + hydrate. A commit failure is recorded, not fatal.
+                    try:
+                        page.goto(url, wait_until="commit")
+                    except Exception as e:
+                        nav_error = "goto: %s" % e
+                    settle(page, rt_timeout, settle_ms)                  # bounded — lets the page hydrate, never hangs
 
                 # --- semantic readiness, in order: selector -> text markers -> spinner gone -> fonts -> settle ---
                 # ("page loaded" != "screen usable"; networkidle alone misses async-hydrated widgets)
