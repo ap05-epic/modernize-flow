@@ -89,7 +89,7 @@ the driver agent copies and fills itself — you don't edit them by hand (§5).
 Verify the engines:
 ```bash
 node   ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check        # {"self_check":"ok","identical_diff_pixels":0}
-python ~/.copilot/skills/springboot-target-kit/scripts/extract_backend.py --self-check   # FULL mode
+python3 ~/.copilot/skills/springboot-target-kit/scripts/extract_backend.py --self-check   # FULL mode
 ```
 
 ## 5. Configuration — `project.json` + the agent fills `status.md`
@@ -111,7 +111,7 @@ Proves the pipeline works on the pod *before* you trust the agent with a full sw
 ```bash
 S=~/.copilot/skills ; P=work/project.json
 # 0a. bootstrap project.json from the URL + source (the agent does this itself in §6b; here you do it by hand)
-python $S/legacy-crawl-capture/scripts/init_project.py --url <legacy login URL> \
+python3 $S/legacy-crawl-capture/scripts/init_project.py --url <legacy login URL> \
   --webapp-dir <webapp> --source-dir <java/resources root> --out $P     # then complete any "_todo" items
 # 0b. sanity: every script answers --self-check without a browser
 for f in legacy-crawl-capture/scripts/init_project legacy-crawl-capture/scripts/extract_jsp legacy-crawl-capture/scripts/crawl_ajax \
@@ -119,66 +119,66 @@ for f in legacy-crawl-capture/scripts/init_project legacy-crawl-capture/scripts/
          react-replica-kit/scripts/extract_theme react-replica-kit/scripts/build_index \
          parity-verify/scripts/dom_diff parity-verify/scripts/verify_screen springboot-target-kit/scripts/extract_backend \
          springboot-target-kit/scripts/scaffold_backend springboot-target-kit/scripts/verify_contract ; do
-  python $S/$f.py --self-check ; done    # expect 13x "self_check: ok"
+  python3 $S/$f.py --self-check ; done    # expect 13x "self_check: ok"
 node $S/parity-verify/scripts/pixel_diff.js --self-check
 
 # 0c. ensure a browser is installed for capture (the kit drives Playwright)
-python -m playwright install chromium          # Linux: also `playwright install-deps`  (or use --channel chrome|msedge)
+python3 -m playwright install chromium          # Linux: also `playwright install-deps`  (or use --channel chrome|msedge)
 
 # 1. login once (the session everything reuses). For SESSION-SENSITIVE / AJAX screens, skip the saved state and
 #    capture with --login (below) — a saved single-cookie auth_state is often rotated by the server. Probe auth first:
-python $S/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json   # simple screens
-python $S/legacy-crawl-capture/scripts/capture_screen.py --check-login --project $P --creds login.env   # exit 0 = authenticated
+python3 $S/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json   # simple screens
+python3 $S/legacy-crawl-capture/scripts/capture_screen.py --check-login --project $P --creds login.env   # exit 0 = authenticated
 
 # 2. THEME from the legacy CSS source (colors/fonts come from here)
-python $S/react-replica-kit/scripts/extract_theme.py --css-dir <webapp>/theme --out-dir work/evidence/theme
+python3 $S/react-replica-kit/scripts/extract_theme.py --css-dir <webapp>/theme --out-dir work/evidence/theme
 
 # 3. DISCOVER views: static + AJAX (from the start) -> one viewgraph  (--project for the app taxonomy + login markers)
-python $S/legacy-crawl-capture/scripts/crawl_screens.py --struts-config <…>/struts-config.xml \
+python3 $S/legacy-crawl-capture/scripts/crawl_screens.py --struts-config <…>/struts-config.xml \
   --webapp-dir <webapp> --project $P --out work/screens.json --emit-viewgraph work/static-viewgraph.json
-python $S/legacy-crawl-capture/scripts/crawl_ajax.py --start-url <post-login start> --project $P \
+python3 $S/legacy-crawl-capture/scripts/crawl_ajax.py --start-url <post-login start> --project $P \
   --auth-state work/auth_state.json --merge work/static-viewgraph.json --out work/evidence/viewgraph.json
 
 # 4. PARSE one flow's JSP -> source-model.json (UI build input)
-python $S/legacy-crawl-capture/scripts/extract_jsp.py --jsp <webapp>/jsp/<flow>.jsp \
+python3 $S/legacy-crawl-capture/scripts/extract_jsp.py --jsp <webapp>/jsp/<flow>.jsp \
   --webapp-dir <webapp> --out work/evidence/<flow>_default/source-model.json
 
 # 5. CAPTURE that view (real responses via --record-har; error pages auto-quarantine to _rejected/).
 #    --login = FRESH from-start login in the capture context (robust for session-sensitive/AJAX screens; the login
 #    POST is redacted from the HAR). Swap to --auth-state work/auth_state.json for simple, non-session-sensitive screens.
-python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
+python3 $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
   --out-dir work/evidence/<flow>_default --name legacy --login --creds login.env --project $P --record-har
 #   -> check work/evidence/<flow>_default/legacy.capture.json has "usable": true (not an error page).
 #      exit 2 + "nav_error" = a stall: inspect the partial artifacts in _rejected/ (it no longer hangs).
 
 # 6. FRONTEND: real data (record) + scaffold the app with the theme + project defaults
-python $S/legacy-crawl-capture/scripts/capture_fixtures.py \
+python3 $S/legacy-crawl-capture/scripts/capture_fixtures.py \
   --har work/evidence/<flow>_default/legacy.har --out <app>/src/mocks/<flow>_default
 bash $S/react-replica-kit/scripts/scaffold_app.sh <app> work/evidence/theme/theme.css $P    # once
 
 # 7. (agent builds src/screens/<Flow> FROM source-model + theme, runs npm run dev, captures react with the SAME profile)
-python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
+python3 $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
   --url http://localhost:5173/#/<flow>_default --out-dir work/evidence/<flow>_default --name react
 
 # 8. PROVE frontend parity (record = exact pixels; live = structure/style+data)
-python $S/parity-verify/scripts/verify_screen.py \
+python3 $S/parity-verify/scripts/verify_screen.py \
   --legacy-model work/evidence/<flow>_default/legacy.model.json --legacy-png work/evidence/<flow>_default/legacy.png \
   --react-model  work/evidence/<flow>_default/react.model.json  --react-png  work/evidence/<flow>_default/react.png \
   --out-dir work/evidence/<flow>_default/parity --name <flow>_default --data-mode record --pixel-threshold 0.005
 
 # 8b. FULL MODE — backend: trace the data layer, scaffold Spring Boot, verify the endpoint vs the legacy HAR
-python $S/springboot-target-kit/scripts/extract_backend.py --action <src>/.../<Flow>Action.java \
+python3 $S/springboot-target-kit/scripts/extract_backend.py --action <src>/.../<Flow>Action.java \
   --source-dir <java-root> --project $P --out work/evidence/<flow>_default/backend-model.json
-python $S/springboot-target-kit/scripts/scaffold_backend.py \
+python3 $S/springboot-target-kit/scripts/scaffold_backend.py \
   --model work/evidence/<flow>_default/backend-model.json --out-dir <api>/src/main/java --package com.example.app
 #   (agent fills the ServiceImpl business logic + result-set->DTO mapping + session binding, then runs the app)
 curl -s 'http://localhost:8081/api/<flow>' > work/new_<flow>.json
-python $S/springboot-target-kit/scripts/verify_contract.py --har work/evidence/<flow>_default/legacy.har \
+python3 $S/springboot-target-kit/scripts/verify_contract.py --har work/evidence/<flow>_default/legacy.har \
   --endpoint-json work/new_<flow>.json --match /api/<flow> --data-mode record    # exit 0 = PASS
 
 # 9. INDEX + review
-python $S/react-replica-kit/scripts/build_index.py --manifest work/evidence/MANIFEST.json   # -> INDEX.html
-python $S/react-replica-kit/scripts/serve_review.py --work-dir work/evidence --react-base-url http://localhost:5173
+python3 $S/react-replica-kit/scripts/build_index.py --manifest work/evidence/MANIFEST.json   # -> INDEX.html
+python3 $S/react-replica-kit/scripts/serve_review.py --work-dir work/evidence --react-base-url http://localhost:5173
 ```
 
 ## 6b. What to type into Copilot (after `install.sh <mode>`)

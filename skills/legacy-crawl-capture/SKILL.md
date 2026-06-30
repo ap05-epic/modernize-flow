@@ -85,14 +85,14 @@ This is the **authoritative parity capture** (not a quick screenshot — see the
 It enforces *semantic readiness* so the bundle reflects a **usable** screen, not just a rendered one.
 ```bash
 # Session-sensitive / AJAX legacy screen (recommended): FRESH from-start login, no stale cookie:
-python scripts/capture_screen.py --profile profiles/f010_default.json --project work/project.json \
+python3 scripts/capture_screen.py --profile profiles/f010_default.json --project work/project.json \
   --out-dir work/evidence/f010_default --name legacy --login --creds login.env --record-har
 
 # Quick auth probe — verify login works in ISOLATION from capture (prints post-login title; exit 0/2):
-python scripts/capture_screen.py --check-login --project work/project.json --creds login.env
+python3 scripts/capture_screen.py --check-login --project work/project.json --creds login.env
 
 # Or fully on the CLI:
-python scripts/capture_screen.py --url <legacy-screen-url> --project work/project.json --login --creds login.env \
+python3 scripts/capture_screen.py --url <legacy-screen-url> --project work/project.json --login --creds login.env \
   --out-dir work/screenshots --name f010_default \
   --viewport 1920x1080 --wait-for "#pmenu" \
   --must-contain "<a label that proves real data loaded>" \
@@ -107,8 +107,10 @@ asset failed** — a `usable:false` PNG is not admissible parity evidence.
 - **`--login` (+ `--project`, `--creds`)** does a FRESH from-start login in the capture context (warms the
   session), then navigates the target — the robust path for **session-sensitive / AJAX screens** where a saved
   `--auth-state` is a stale single cookie the server rotates. Reads `loginUrl`/`loginFields` from project.json;
-  creds from a gitignored `login.env` (or `LEGACY_USER`/`LEGACY_PASS` env). The login POST is **redacted from the
-  saved HAR**. `--check-login` runs just the login as an auth probe. `profiles` can set `"login": true` instead.
+  creds from a gitignored `login.env` (or `LEGACY_USER`/`LEGACY_PASS` env). `--creds login.env` is **searched near
+  project.json + a few parent levels** if it isn't at the given path (so the app-root `login.env` is found). The
+  login POST is **redacted from the saved HAR**. `--check-login` runs just the login as an auth probe (it does NOT
+  treat an authenticated landing on the login-action route as an error). `profiles` can set `"login": true` instead.
 - **No-stall guarantee:** navigation uses `domcontentloaded` + a **bounded** networkidle settle, and the whole
   capture is wrapped so the **HAR always flushes and partial artifacts are written even on a timeout** — a hang
   becomes a `rejected` capture with a `nav_error` (exit 2), never a silent stall. `--channel chrome|msedge` falls

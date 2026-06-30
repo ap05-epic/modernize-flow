@@ -182,18 +182,41 @@ def launch_browser(p, channel=None):
                      "(Linux: also `playwright install-deps`), or pass --channel chrome|msedge for a system browser." % last)
 
 
-def load_creds(path):
-    """Resolve login creds from a KEY=VALUE env file (default login.env). Values are never logged or printed."""
+def _read_env_file(p):
     vals = {}
-    p = path or "login.env"
-    if os.path.exists(p):
-        for line in open(p, encoding="utf-8", errors="replace"):
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            vals[k.strip()] = v.strip().strip('"').strip("'")
+    for line in open(p, encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        vals[k.strip()] = v.strip().strip('"').strip("'")
     return vals
+
+
+def load_creds(path, anchors=None):
+    """Resolve login creds from a KEY=VALUE env file. If `path` doesn't exist, search for a file with that
+    basename (default login.env) in the anchor dirs and a few parent levels — so the conventional creds file
+    is found even when it lives at the app root rather than next to project.json. Values are never logged."""
+    name = os.path.basename(path) if path else "login.env"
+    candidates = [path] if path else []
+    for a in (anchors or []):
+        d = os.path.abspath(a)
+        for _ in range(4):                       # the file + a few levels up from each anchor
+            candidates.append(os.path.join(d, name))
+            nd = os.path.dirname(d)
+            if nd == d:
+                break
+            d = nd
+    candidates.append(name)                      # bare basename in CWD
+    seen = set()
+    for c in candidates:
+        c = os.path.abspath(c)
+        if c in seen:
+            continue
+        seen.add(c)
+        if os.path.isfile(c):
+            return _read_env_file(c)
+    return {}
 
 
 def login_url_for(proj):
@@ -224,6 +247,17 @@ def do_login(page, proj, creds, timeout, settle_ms):
     except Exception:
         page.press("input[name='%s']" % pf, "Enter")   # form with no explicit submit button
     settle(page, timeout, settle_ms)
+
+
+def login_ok(title, final_url, still_login, error_signatures, login_basename):
+    """Did login succeed? An authenticated app can legitimately LAND on its login-action route (the post-login
+    landing), so the login basename is NOT an error signal here — judge by the password field being gone + the
+    HARD error signatures (case-insensitive; the login basename is excluded). Generic: no app names."""
+    blob = (title + " " + final_url).lower()
+    lb = (login_basename or "").lower()
+    hard = [s for s in error_signatures if s and s != lb]
+    is_error = any(s in blob for s in hard)
+    return (not still_login) and (not is_error)
 
 
 def redact_har(har_path, login_basename):
@@ -295,7 +329,12 @@ def main():
     # The app's own LOGIN route is a classic misleading target (session-expiry redirect) — derived from
     # project.loginAction, NOT hardcoded to any one app.
     proj = load_project(args.project)
-    proj_login = (proj.get("loginAction") or "").rstrip("/").split("/")[-1]
+    proj_login = (proj.get("loginAction") or "").rstrip("/").split("/")[-1].lower()   # lowercased: compared against lowercased blobs + the HAR url
+    cred_anchors = [d for d in [
+        (os.path.dirname(os.path.abspath(args.project)) if args.project else None),
+        (proj.get("legacySourceDir") or None),
+        os.getcwd(),
+    ] if d]
     error_signatures = [s.lower() for s in (
         ["http status 5", "http status 4", "error 500", "error 404", "exception report",
          "stack trace", "page not found", "an error has occurred"]
@@ -356,11 +395,26 @@ def main():
         redact_har(hp, "loginaction.do")
         assert "secret" not in open(hp).read(), "password leaked through redaction"
 
+        # 4. login_ok: an authenticated landing ON the login-action route is NOT an error (the exact pod
+        #    false-negative). Pass a MIXED-CASE basename to prove the case-insensitive exclusion holds.
+        sigs = ["exception report", "loginaction.do", "http status 5"]
+        assert login_ok("FA Search", "http://h/BAA/loginAction.do", False, sigs, "loginAction.do") is True
+        assert login_ok("Login", "http://h/BAA/jsp/login.jsp", True, sigs, "loginAction.do") is False   # password still present
+        assert login_ok("HTTP Status 500", "http://h/x", False, sigs, "loginAction.do") is False        # real hard error
+
+        # 5. load_creds finds the conventional login.env at an ANCHOR's PARENT, not just the literal path
+        cdir = tempfile.mkdtemp(prefix="cap_creds_")
+        deep = os.path.join(cdir, "modernization"); os.makedirs(deep)
+        with open(os.path.join(cdir, "login.env"), "w") as f:
+            f.write("user=alice\npassword=topsecret\n")
+        got = load_creds("login.env", [deep])
+        assert got.get("user") == "alice" and got.get("password") == "topsecret", got
+
         out_base = os.path.join(args.out_dir, args.name) if (args.out_dir and args.name) else None
         print(json.dumps({"self_check": "ok", "viewport": vp, "out_base": out_base, "playwright_importable": ok,
                           "record_har": record_har, "error_signatures": len(error_signatures),
                           "checks": {"settle_swallows": True, "do_login_selectors": True, "creds_guard": True,
-                                     "har_redacted": True},
+                                     "har_redacted": True, "login_ok_landing": True, "creds_search": True},
                           "resolved": {"url": url, "login": do_login_flag, "wait_for": wait_for,
                                        "must_contain": must_contain, "wait_for_gone": wait_for_gone, "wait_ms": wait_ms}}))
         return
@@ -370,7 +424,7 @@ def main():
             from playwright.sync_api import sync_playwright
         except Exception as e:
             raise SystemExit("Playwright not available (%s). pip install playwright && playwright install chromium" % e)
-        creds = load_creds(args.creds)
+        creds = load_creds(args.creds, cred_anchors)
         final_url, title, still_login = "", "", True
         with sync_playwright() as p:
             browser = launch_browser(p, args.channel)
@@ -386,13 +440,9 @@ def main():
                 except Exception: pass
                 try: browser.close()
                 except Exception: pass
-        # landing IS often loginAction.do, so don't treat that route as "error"; judge by the password field +
-        # the hard error signatures only (exclude the login-route basename).
-        hard_errors = [s for s in error_signatures if s and s != proj_login]
-        is_error = any(s in (title + " " + final_url).lower() for s in hard_errors)
-        authed = (not still_login) and (not is_error)
+        authed = login_ok(title, final_url, still_login, error_signatures, proj_login)
         print(json.dumps({"check_login": "ok", "final_url": final_url, "title": title,
-                          "authenticated": authed, "password_field_present": still_login, "error_page": is_error}))
+                          "authenticated": authed, "password_field_present": still_login, "error_page": not authed}))
         sys.exit(0 if authed else 2)
 
     if not args.out_dir or not args.name:
@@ -417,7 +467,7 @@ def main():
     elif isinstance(prof.get("workflow"), str):
         steps = json.load(open(prof["workflow"]))
     network, assets = [], []
-    creds = load_creds(args.creds) if do_login_flag else {}
+    creds = load_creds(args.creds, cred_anchors) if do_login_flag else {}
 
     doc_status = {"code": None}  # status of the top-level navigation document (mutable holder)
     base = os.path.join(args.out_dir, args.name)   # re-pointed to _rejected/ after load if it's an error/partial page
