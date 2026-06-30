@@ -36,8 +36,8 @@ DAO_NAME     = re.compile(r"(?:DAO|Dao|Repository)$")
 
 # iBATIS inline params  #prop#  or  #prop:VARCHAR#  ;  MyBatis  #{prop,jdbcType=VARCHAR}
 IBATIS_PARAM = re.compile(r"#\{?\s*([A-Za-z0-9_.]+)\s*(?:[,:]\s*(?:jdbcType\s*=\s*)?([A-Za-z]+))?[^#}]*[}#]")
-PARAM_MAP    = re.compile(r"<parameter\b[^>]*property\s*=\s*[\"']([^\"']+)[\"'][^>]*?(?:jdbcType\s*=\s*[\"']([^\"']+)[\"'])?[^>]*/?>", re.I)
-RESULT_ROW   = re.compile(r"<result\b[^>]*?(?:column\s*=\s*[\"']([^\"']+)[\"'])[^>]*?(?:jdbcType\s*=\s*[\"']([^\"']+)[\"'])?[^>]*?(?:property\s*=\s*[\"']([^\"']+)[\"'])?[^>]*/?>", re.I)
+PARAM_TAG    = re.compile(r"<parameter\b([^>]*?)/?>", re.I)   # attrs parsed per-tag (order-independent) via _attr
+RESULT_TAG   = re.compile(r"<result\b([^>]*?)/?>", re.I)
 
 
 def read(path):
@@ -88,7 +88,7 @@ def parse_sqlmaps(sqlmap_dir):
             if "call" not in text.lower():
                 continue
             # local parameterMaps / resultMaps in this file
-            pmaps = _collect_maps(text, "parameterMap", PARAM_MAP)
+            pmaps = _collect_maps(text, "parameterMap", PARAM_TAG)
             rmaps = _collect_result_maps(text)
             ns = re.search(r"<sqlMap\b[^>]*namespace\s*=\s*[\"']([^\"']+)[\"']", text, re.I)
             ns = ns.group(1) if ns else ""
@@ -124,14 +124,18 @@ def _attr(attrs, name):
     return m.group(1) if m else ""
 
 
-def _collect_maps(text, tag, param_re):
+def _collect_maps(text, tag, tag_re):
+    """parameterMap id -> [{name, jdbcType}]. Attributes parsed per <parameter> tag via _attr so order
+    (property before/after jdbcType) doesn't matter."""
     maps = {}
     for m in re.finditer(r"<" + tag + r"\b[^>]*id\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</" + tag + r">",
                          text, re.I | re.S):
         mid, body = m.group(1), m.group(2)
         params = []
-        for p in param_re.finditer(body):
-            params.append({"name": p.group(1), "jdbcType": (p.group(2) or "").upper() or "VARCHAR"})
+        for pm in tag_re.finditer(body):
+            prop = _attr(pm.group(1), "property")
+            if prop:
+                params.append({"name": prop, "jdbcType": (_attr(pm.group(1), "jdbcType") or "VARCHAR").upper()})
         maps[mid] = params
     return maps
 
@@ -142,11 +146,11 @@ def _collect_result_maps(text):
                          text, re.I | re.S):
         mid, body = m.group(1), m.group(2)
         cols = []
-        for r in RESULT_ROW.finditer(body):
-            col = r.group(1)
+        for rm in RESULT_TAG.finditer(body):
+            col = _attr(rm.group(1), "column")
             if col:
-                cols.append({"name": col, "jdbcType": (r.group(2) or "").upper() or "VARCHAR",
-                             "property": r.group(3) or ""})
+                cols.append({"name": col, "jdbcType": (_attr(rm.group(1), "jdbcType") or "VARCHAR").upper(),
+                             "property": _attr(rm.group(1), "property")})
         maps[mid] = cols
     return maps
 
@@ -299,7 +303,7 @@ SAMPLE_SQLMAP = '''<?xml version="1.0"?>
 <sqlMap namespace="FaSummary">
   <parameterMap id="pm" class="map">
     <parameter property="faNum" jdbcType="VARCHAR"/>
-    <parameter property="period" jdbcType="VARCHAR"/>
+    <parameter jdbcType="DATE" property="period"/>
   </parameterMap>
   <resultMap id="rm" class="map">
     <result column="FA_NAME" property="faName" jdbcType="VARCHAR"/>
@@ -333,8 +337,10 @@ def self_check():
     assert "faNum" in names and "period" in names, names
     fa = next(p for p in sp["inParams"] if p["name"] == "faNum")
     assert fa["jdbcType"] == "VARCHAR" and fa["source"] == "session", fa
-    cols = [c["name"] for c in sp["outColumns"]]
-    assert "FA_NAME" in cols and "YTD_AMT" in cols, cols
+    per = next(p for p in sp["inParams"] if p["name"] == "period")
+    assert per["jdbcType"] == "DATE", "parameterMap jdbcType not captured (order-independence): %s" % per
+    cols = {c["name"]: c["jdbcType"] for c in sp["outColumns"]}
+    assert cols.get("FA_NAME") == "VARCHAR" and cols.get("YTD_AMT") == "DECIMAL", "resultMap jdbcType not captured: %s" % cols
     assert "faNum" in model["sessionInputs"], model["sessionInputs"]
     assert "period" in model["requestParams"], model["requestParams"]
     assert "FaSummaryService" in model["serviceChain"], model["serviceChain"]

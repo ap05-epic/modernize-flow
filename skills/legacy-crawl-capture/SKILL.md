@@ -34,6 +34,16 @@ It is **source-driven**: the driver agent builds from parsed JSP source, not fro
 
 ## Scripts
 
+### init_project.py — bootstrap `project.json` (the agent owns the config, not the human)
+```bash
+python scripts/init_project.py --url <legacy login URL> --webapp-dir <webapp> --source-dir <java/resources root> \
+  --out work/project.json          # --self-check for a no-file sanity run
+```
+Derives `contextRoot`/`legacyBaseUrl` (from the URL), `loginAction`+`loginFields` (from the login JSP),
+`families`+`pathConventions` (from the jsp/ subdirs), and `db.sqlmapDir` (from CALLABLE sqlmaps). Anything it
+can't derive is left blank under `_todo` for the agent to complete. Run this FIRST in analysis mode, then finish
+the `_todo` items. Every other script reads the result via `--project`.
+
 ### extract_jsp.py — parse a JSP into `source-model.json` (the BUILD INPUT)
 ```bash
 python scripts/extract_jsp.py --jsp <webapp>/jsp/<flow>.jsp --webapp-dir <webapp> \

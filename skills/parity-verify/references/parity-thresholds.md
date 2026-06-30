@@ -1,6 +1,6 @@
 # Parity thresholds & acceptable differences
 
-The gate has two knobs. Tune them in STATUS.md §3 and pass via `verify_screen.py --pixel-threshold`.
+The gate has two knobs. Tune them in status.md §3 and pass via `verify_screen.py --pixel-threshold`.
 
 ## Data mode changes what's gated (`verify_screen.py --data-mode`)
 
@@ -25,7 +25,7 @@ The gate has two knobs. Tune them in STATUS.md §3 and pass via `verify_screen.p
    layout/spacing/color defects (those show up as solid regions well above the floor).
 
    - `--pixel-threshold 0.005` → gate ratio. Tighten toward `0.001` for simple/static screens; loosen to
-     `~0.01` only for dense, font-heavy grids, and say so in STATUS.md.
+     `~0.01` only for dense, font-heavy grids, and say so in status.md.
    - `pixel_diff.js --threshold 0.1` → per-pixel pixelmatch sensitivity (how different a single pixel must
      be to count). Leave at 0.1 unless the legacy app uses sub-pixel text rendering that creates noise.
 
@@ -54,5 +54,5 @@ A high pixel ratio is usually a capture mismatch, not a fidelity problem:
 ## When a screen genuinely can't be pixel-exact
 
 Record it: keep the structural gate strict (it still proves the replica is *correct*), set a per-screen
-pixel threshold in STATUS.md §3 with a one-line reason, and attach the `side-by-side.png` so a human can
+pixel threshold in status.md §3 with a one-line reason, and attach the `side-by-side.png` so a human can
 sign off the residual. Never relax the **structural** gate to make a screen pass.

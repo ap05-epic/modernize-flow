@@ -34,6 +34,23 @@ def data_presence(legacy, react):
             "legacy_rows": lrows, "react_rows": rrows, "reasons": reasons}
 
 
+def compute_gate(dom, data, ratio, size_ok, threshold, mode):
+    """Fuse the lanes into the pass/fail decision. record mode gates on exact pixels; live mode treats pixels
+    as advisory and gates on structure + data-presence + comparable size."""
+    pixel_ok = (ratio is not None) and (ratio <= threshold) and size_ok
+    pixel_gates = pixel_ok if mode == "record" else size_ok
+    return {
+        "pass": dom["summary"]["critical"] == 0 and data["ok"] and pixel_gates,
+        "data_mode": mode,
+        "critical_structural": dom["summary"]["critical"],
+        "data_present": data["ok"],
+        "pixel_ratio": ratio,
+        "pixel_threshold": threshold,
+        "pixel_ok": bool(pixel_ok),
+        "pixel_gated": mode == "record",
+    }
+
+
 def overlap_area(a, b):
     ix = max(0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]))
     iy = max(0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
@@ -130,8 +147,33 @@ def build_report_md(name, result):
     return "\n".join(lines) + "\n"
 
 
+def self_check():
+    """Exercise the gate fusion (compute_gate over the real dom_diff + data_presence lanes) without a browser."""
+    def model(text="Account #", rows=3):
+        return {"title": "x", "elements": [{"i": 0, "tag": "label", "text": text, "box": {}, "style": {}, "path": "0/0"}],
+                "tables": [{"index": 0, "rowCount": rows, "headers": ["A", "B"]}], "forms": []}
+    legacy = model()
+    # identical + clean pixels -> PASS
+    g = compute_gate(dom_diff.build_diff(legacy, model()), data_presence(legacy, model()), 0.0, True, 0.005, "record")
+    assert g["pass"], g
+    # text mismatch -> critical DOM delta -> FAIL
+    g2 = compute_gate(dom_diff.build_diff(legacy, model("Acct #")), data_presence(legacy, model("Acct #")), 0.0, True, 0.005, "record")
+    assert not g2["pass"] and g2["critical_structural"] > 0, g2
+    # legacy has rows, react empty -> data-presence FAIL
+    g3 = compute_gate(dom_diff.build_diff(legacy, model(rows=0)), data_presence(legacy, model(rows=0)), 0.0, True, 0.005, "record")
+    assert not g3["pass"] and not g3["data_present"], g3
+    # record mode gates pixels: over threshold -> FAIL ; live mode tolerates the same drift -> PASS
+    g4 = compute_gate(dom_diff.build_diff(legacy, model()), data_presence(legacy, model()), 0.2, True, 0.005, "record")
+    g5 = compute_gate(dom_diff.build_diff(legacy, model()), data_presence(legacy, model()), 0.2, True, 0.005, "live")
+    assert not g4["pass"] and g5["pass"], (g4, g5)
+    print(json.dumps({"self_check": "ok", "pass_identical": g["pass"], "fail_text_mismatch": not g2["pass"],
+                      "fail_empty_data": not g3["pass"], "record_gates_pixels": not g4["pass"], "live_tolerates": g5["pass"]}))
+
+
 def main():
     ap = argparse.ArgumentParser(description="Fuse DOM + pixel parity lanes into a gated, actionable report.")
+    if "--self-check" in sys.argv:
+        return self_check()
     ap.add_argument("--legacy-model", required=True)
     ap.add_argument("--legacy-png", required=True)
     ap.add_argument("--react-model", required=True)
@@ -170,20 +212,7 @@ def main():
     data = data_presence(legacy, react)
     ratio = pixel.get("ratio") if isinstance(pixel, dict) else None
     size_ok = isinstance(pixel, dict) and not pixel.get("dimMismatch") and not pixel.get("error")
-    pixel_ok = (ratio is not None) and (ratio <= args.pixel_threshold) and size_ok
-    # record mode: data is identical -> GATE on exact pixels. live mode: data drifts -> pixel advisory,
-    # gate on structure + style + data-presence + comparable size (no exact pixel requirement).
-    pixel_gates = pixel_ok if args.data_mode == "record" else size_ok
-    gate = {
-        "pass": dom["summary"]["critical"] == 0 and data["ok"] and pixel_gates,
-        "data_mode": args.data_mode,
-        "critical_structural": dom["summary"]["critical"],
-        "data_present": data["ok"],
-        "pixel_ratio": ratio,
-        "pixel_threshold": args.pixel_threshold,
-        "pixel_ok": bool(pixel_ok),
-        "pixel_gated": args.data_mode == "record",
-    }
+    gate = compute_gate(dom, data, ratio, size_ok, args.pixel_threshold, args.data_mode)
     result = {"name": args.name, "gate": gate, "dom": dom, "pixel": pixel, "data": data}
     json.dump(result, open(os.path.join(args.out_dir, args.name + ".parity-report.json"), "w", encoding="utf-8"), indent=1)
     open(os.path.join(args.out_dir, args.name + ".parity-report.md"), "w", encoding="utf-8").write(build_report_md(args.name, result))

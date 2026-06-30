@@ -46,7 +46,10 @@ READ status.md
 ## Analysis mode (order matters)
 1. **Triage** (gate, once): reachable? auth e2e? canonical vs misleading route? assets 200? one view hydrates?
    (`legacy-crawl-capture/references/runtime-readiness-and-auth.md` §1). Login → `auth_state.json`.
-2. **project.json** from `templates/project.json`; mirror into `status.md` §Project Config; `mode: frontend`.
+2. **project.json — bootstrap it YOURSELF** (not the human): run `legacy-crawl-capture/scripts/init_project.py
+   --url <legacy URL> --webapp-dir <webapp>` → a draft (contextRoot, login action + fields, families auto-derived);
+   complete its `_todo` items, drop `_discovered`/`_todo`, mirror into `status.md` §Project Config; `mode: frontend`.
+   (db/sqlmap fields aren't needed in frontend mode.) Human inputs: only the URL + how to log in.
 3. **Theme**: `extract_theme.py` → `evidence/theme/{tokens.json,theme.css}`.
 4. **Discover every view**: `crawl_screens.py --emit-viewgraph` + `crawl_ajax.py --merge` → `viewgraph.json`
    (AJAX views from the START; never open deep links directly; each view carries its from-start click-path).

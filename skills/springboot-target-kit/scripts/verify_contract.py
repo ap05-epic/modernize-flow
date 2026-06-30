@@ -147,7 +147,7 @@ def render(result, legacy_path, match):
         lines.append("- first-row value diffs (advisory): " +
                      "; ".join("%s legacy=%r react=%r" % (v["field"], v["legacy"], v["react"]) for v in result["valueSpot"]))
     if result["ok"]:
-        lines.append("\nContract reproduced. ✔")
+        lines.append("\nContract reproduced. (PASS)")
     else:
         lines.append("\nFix the gateway/DTO mapping so the endpoint reproduces the legacy fields, then re-run.")
     return "\n".join(lines) + "\n"

@@ -94,29 +94,32 @@ python ~/.copilot/skills/springboot-target-kit/scripts/extract_backend.py --self
 
 ## 5. Configuration — `project.json` + the agent fills `status.md`
 
-Two config surfaces, neither hand-filled screen-by-screen:
+Two config surfaces, **both created by the agent — you do not hand-fill either**:
 - **`project.json`** (machine config every script reads via `--project`) — the app-specific values: context root,
   `legacyBaseUrl`, `loginAction` + `loginFields`, `families`/`pathConventions`, `viewport`, `ports`, and (FULL)
-  `db.sqlmapDir`. Copy `templates/project.json`, fill it (or start from `examples/baa.project.json`). This is what
-  makes the toolkit **generic** — no app name is hardcoded in the scripts.
-- **`status.md`** — the driver agent **creates and seeds it** on its first run; you do not hand-fill it. The only
-  things a human supplies in the kickoff prompt are the **legacy URL**, **how to log in**, and the **`project.json`
-  path** (source root + target paths optional — the agent discovers/defaults them). Edit `status.md` afterward only
-  to override a default or scope the run.
+  `db.sqlmapDir`. The agent **bootstraps it itself** with `init_project.py` (derives most fields from the URL + the
+  login JSP + the source tree), then completes the few `_todo` items it couldn't derive. This is what makes the
+  toolkit **generic** — no app name is hardcoded in the scripts. (`examples/baa.project.json` is a worked example.)
+- **`status.md`** — the driver agent **creates and seeds it** too. The only things a human supplies in the kickoff
+  prompt are the **legacy URL**, **how to log in**, and the **legacy source path** (target paths optional — the agent
+  defaults them). Edit either file afterward only to override a default or scope the run.
 
 ## 6. First‑run smoke test — OPTIONAL manual wiring check (one flow, by hand)
 
 Proves the pipeline works on the pod *before* you trust the agent with a full sweep. The autonomous run is §6b.
 
 ```bash
-S=~/.copilot/skills ; P=work/project.json     # your filled project.json (from examples/baa.project.json)
-# 0. sanity: every script answers --self-check without a browser
-for f in legacy-crawl-capture/scripts/extract_jsp legacy-crawl-capture/scripts/crawl_ajax \
-         legacy-crawl-capture/scripts/crawl_screens legacy-crawl-capture/scripts/capture_screen \
+S=~/.copilot/skills ; P=work/project.json
+# 0a. bootstrap project.json from the URL + source (the agent does this itself in §6b; here you do it by hand)
+python $S/legacy-crawl-capture/scripts/init_project.py --url <legacy login URL> \
+  --webapp-dir <webapp> --source-dir <java/resources root> --out $P     # then complete any "_todo" items
+# 0b. sanity: every script answers --self-check without a browser
+for f in legacy-crawl-capture/scripts/init_project legacy-crawl-capture/scripts/extract_jsp legacy-crawl-capture/scripts/crawl_ajax \
+         legacy-crawl-capture/scripts/crawl_screens legacy-crawl-capture/scripts/capture_screen legacy-crawl-capture/scripts/capture_fixtures \
          react-replica-kit/scripts/extract_theme react-replica-kit/scripts/build_index \
-         parity-verify/scripts/dom_diff springboot-target-kit/scripts/extract_backend \
+         parity-verify/scripts/dom_diff parity-verify/scripts/verify_screen springboot-target-kit/scripts/extract_backend \
          springboot-target-kit/scripts/scaffold_backend springboot-target-kit/scripts/verify_contract ; do
-  python $S/$f.py --self-check ; done
+  python $S/$f.py --self-check ; done    # expect 13x "self_check: ok"
 node $S/parity-verify/scripts/pixel_diff.js --self-check
 
 # 1. login once (the session everything reuses)
@@ -179,10 +182,11 @@ Copilot auto-discovers the skills; invoke the agent by name. Use **`modernize-fl
 > "Read jsp2react/SETUP.md and README.md. Confirm the skills are under ~/.copilot/skills and the **<modernize-flow |
 > jsp2react>** agent is discoverable, then run the §6 self‑checks (`--self-check`) and report results. Don't crawl yet."
 
-**Step B — analyze (run once; builds the source‑driven contract for ALL flows). You give URL + login + project.json:**
+**Step B — analyze (run once; builds the source‑driven contract for ALL flows). You give only URL + login + source:**
 > "Use the **<modernize-flow | jsp2react>** agent. Legacy URL = `<…>`. Log in via webapp-snapshot/save_auth_state.py
-> (creds/auth_state at `<…>`). project.json = `<…>` (copied from examples/baa.project.json). Legacy source at `<…>`
-> *(omit to discover)*. **Bootstrap status.md yourself**, then: run pre‑capture triage; **extract the theme**;
+> (creds/auth_state at `<…>`). Legacy source at `<…>`. **Bootstrap `project.json` yourself with init_project.py**
+> (derive context root, login action/fields, families, db.sqlmapDir; complete any `_todo`), then **bootstrap
+> status.md yourself**, then: run pre‑capture triage; **extract the theme**;
 > **discover every view including AJAX** (crawl_screens --emit-viewgraph + crawl_ajax from the start → viewgraph.json
 > — never open deep links directly); for each flow **parse its JSP → source-model.json**, capture evidence + the
 > **REAL responses** (--record-har; error pages auto‑quarantine — look around again)**, and (FULL mode) **trace the
@@ -209,7 +213,8 @@ Then: **"Continue with the next slice."** (repeat) — or, once you trust it,
 
 1. `~/.copilot/skills/` is the skills dir and your Copilot agents dir is where your other agents live. Override with
    `COPILOT_SKILLS_DIR` / `COPILOT_AGENTS_DIR` if not.
-2. `project.json` is filled (context root, login, families, and FULL: `db.sqlmapDir`). Legacy source (incl.
+2. `init_project.py` could reach the URL + source to bootstrap `project.json`; confirm the agent completed its
+   `_todo` items (context root, login fields, families, and FULL: `db.sqlmapDir`). Legacy source (incl.
    `struts-config*.xml`, `.properties`, and FULL: the Java/DAO + sqlmaps) is readable.
 3. Login yields a reusable `auth_state.json` (one manual SSO step may be needed — a pre‑step, not the agent loop).
 4. Data is REAL in every mode: **record** replays the HAR; **live** proxies the real backend; **api** (FULL) is the

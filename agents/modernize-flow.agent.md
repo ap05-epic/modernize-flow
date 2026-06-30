@@ -52,8 +52,12 @@ READ status.md
 Do this ONCE, then implement repeatedly. Order matters:
 1. **Triage** (gate — once): reachable? auth e2e? canonical vs misleading route? assets 200? one view hydrates?
    (`legacy-crawl-capture/references/runtime-readiness-and-auth.md` §1). Login → `auth_state.json` (webapp-snapshot).
-2. **project.json**: fill from `templates/project.json` (context root, login, source dirs, sqlmap dir, families,
-   ports, db). Mirror the key values into `status.md` §Project Config. Set `mode: full`.
+2. **project.json — bootstrap it YOURSELF (the human does not hand-fill it).** Run
+   `legacy-crawl-capture/scripts/init_project.py --url <legacy URL> --webapp-dir <webapp> --source-dir <java/resources
+   root>` → a draft project.json (contextRoot, login action + fields, families, db.sqlmapDir auto-derived). Then
+   **complete its `_todo` items** (confirm the login fields, families, `db.sqlmapDir`) and drop the `_discovered`/
+   `_todo` keys. Mirror the key values into `status.md` §Project Config. Set `mode: full`. The only human inputs are
+   the URL, how to log in, and the source path — everything else you derive.
 3. **Theme**: `extract_theme.py` → `evidence/theme/{tokens.json,theme.css}` (colors/fonts from source).
 4. **Discover every view**: `crawl_screens.py --emit-viewgraph` (static) + `crawl_ajax.py --merge` (AJAX, from the
    START — never open deep links directly) → `viewgraph.json`. Each view carries its full from-start click-path.

@@ -1,5 +1,5 @@
 {
-  "_help": "Machine config read by the modernize-flow / jsp2react scripts via --project (with CLI/env fallbacks). Copy this, fill it for your app, and point scripts at it. status.md §Project Config mirrors these values for humans; this file is the one the scripts parse. Field docs: SETUP.md §5 and springboot-target-kit/SKILL.md. A worked example: examples/baa.project.json.",
+  "_help": "Machine config read by every script via --project. The AGENT bootstraps this itself with legacy-crawl-capture/scripts/init_project.py (derives most fields from the URL + login JSP + source tree) and completes the rest — you do not hand-fill it. This template is the shape/default reference. status.md §Project Config mirrors these values for humans. Field docs: SETUP.md §5. Worked example: examples/baa.project.json.",
 
   "appName": "",
   "contextRoot": "/app",
