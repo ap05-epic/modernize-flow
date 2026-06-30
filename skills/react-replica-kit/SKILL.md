@@ -18,14 +18,14 @@ Colors/fonts come from these tokens, not per-element guesses (fixes color drift)
 
 ## Scaffold (once per project)
 ```bash
-bash scripts/scaffold_app.sh <target-dir> <evidence>/theme/theme.css   # path also recorded in STATUS.md
+bash scripts/scaffold_app.sh <target-dir> <evidence>/theme/theme.css   # path also recorded in status.md
 ```
 Creates a Vite React-TS app, imports `theme.css` globally, wires BOTH data modes (MSW record-replay +
 Vite live proxy in `vite.config.ts`), seeds the **Login screen (F000)**, and installs `msw` +
 `pixelmatch`/`pngjs`. Data mode: `VITE_DATA_MODE=record` (default, MSW replays REAL recorded responses)
 or `VITE_DATA_MODE=live VITE_BACKEND=<url>` (Vite proxy to the real backend). See `references/backend-data-modes.md`.
 
-## Build one view (the builder does this per iteration)
+## Build one view (the driver agent does this per iteration)
 
 1. **Real data** (record mode) — replay this view's REAL recorded responses:
    ```bash
@@ -39,7 +39,7 @@ or `VITE_DATA_MODE=live VITE_BACKEND=<url>` (Vite proxy to the real backend). Se
    - `<Name>.module.css` — styles via the theme CSS variables (`var(--color-01)`…); geometry from the captured
      box. See `references/css-porting.md` (tokens-first).
    - fetch through `src/api.ts` (same endpoint paths from `source-model.ajaxEndpoints`). Types from spec.md Appendix B.
-   - route by STATUS.md id (hash route `#/<id>`), matching `serve_review.py`.
+   - route by status.md id (hash route `#/<id>`), matching `serve_review.py`.
 3. **Render the real data at the same viewport** the legacy capture used.
 
 ## Capture the React render for parity (same tool + profile as the legacy side)

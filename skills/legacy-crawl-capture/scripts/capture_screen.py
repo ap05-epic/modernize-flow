@@ -147,6 +147,15 @@ def load_profile(path):
     return json.load(open(path, encoding="utf-8")) if path else {}
 
 
+def load_project(path):
+    if not path:
+        return {}
+    try:
+        return json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def main():
     ap = argparse.ArgumentParser(description="Capture one screen state as comparable evidence (png + normalized model + a11y + network + capture metadata) with semantic readiness.")
     ap.add_argument("--url", help="URL to capture (legacy screen OR react render). May instead come from --profile.")
@@ -165,6 +174,7 @@ def main():
     ap.add_argument("--body-cap", type=int, default=500_000, help="Max response body bytes stored per request.")
     ap.add_argument("--record-har", action="store_true", help="Record a HAR of the REAL backend responses (responses.har) so the React app can replay real data with no fakes.")
     ap.add_argument("--error-signature", action="append", default=None, help="Extra text that marks an error/wrong page (repeatable). Matched against title+url+body; a hit QUARANTINES the capture.")
+    ap.add_argument("--project", help="project.json — supplies the app's login route + errorSignatures as quarantine markers (generic, not hardcoded).")
     ap.add_argument("--self-check", action="store_true", help="Validate environment/args without launching a browser, then exit.")
     args = ap.parse_args()
 
@@ -177,10 +187,17 @@ def main():
     wait_ms = args.wait_ms if args.wait_ms is not None else int(prof.get("waitMs", 0))
     rt_timeout = args.readiness_timeout
     record_har = args.record_har or bool(prof.get("recordHar"))
-    # error signatures: built-in defaults + profile + CLI (all lowercased, matched against title+url+body)
+    # error signatures (all lowercased, matched against title+url+body):
+    #   generic defaults  +  app-specific from project.json (login route basename + errorSignatures)  +  profile  +  CLI.
+    # The app's own LOGIN route is a classic misleading target (session-expiry redirect) — derived from
+    # project.loginAction, NOT hardcoded to any one app.
+    proj = load_project(args.project)
+    proj_login = (proj.get("loginAction") or "").rstrip("/").split("/")[-1]
     error_signatures = [s.lower() for s in (
         ["http status 5", "http status 4", "error 500", "error 404", "exception report",
-         "stack trace", "page not found", "an error has occurred", "loginaction.do"]
+         "stack trace", "page not found", "an error has occurred"]
+        + ([proj_login] if proj_login else [])
+        + list(proj.get("errorSignatures", []) or [])
         + list(prof.get("errorSignatures", []) or [])
         + list(args.error_signature or []))]
 

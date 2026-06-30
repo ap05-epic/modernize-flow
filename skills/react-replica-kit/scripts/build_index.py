@@ -18,8 +18,9 @@ Usage:
 """
 import argparse, json, os, html
 
-STATUS_COLOR = {"verified": "#1a7f37", "implemented": "#9a6700", "analyzed": "#0969da",
-                "blocked": "#cf222e", "not-started": "#6e7781"}
+# the 6-value lifecycle (matches status.md / modernize-flow exactly)
+STATUS_COLOR = {"signed off": "#116329", "verified": "#1a7f37", "implemented": "#9a6700",
+                "in progress": "#0969da", "blocked": "#cf222e", "not started": "#6e7781"}
 
 
 def esc(s):
@@ -35,7 +36,7 @@ def view_row(v):
     files = v.get("files", {})
     parity = v.get("parity", {})
     thumb_src = rel(folder, parity.get("sideBySide") or files.get("screenshot", ""))
-    status = v.get("status", "analyzed")
+    status = v.get("status", "not started")
     badge = '<span style="background:%s">%s</span>' % (STATUS_COLOR.get(status, "#6e7781"), esc(status))
     flags = []
     if v.get("isError"):
@@ -51,6 +52,15 @@ def view_row(v):
         if parity.get("pixel") is not None:
             flags.append('<span class="muted">pixel %s · crit %s</span>' %
                          (esc(parity.get("pixel")), esc(parity.get("criticalDeltas", "?"))))
+    backend = v.get("backend")
+    if backend:                                   # FULL mode: backend-contract status for this flow
+        sp = ", ".join(backend.get("storedProcs", []) or []) or "?"
+        contract = backend.get("contract", {}) or {}
+        cok = contract.get("pass")
+        flags.append('<span class="flag %s">contract %s</span>' %
+                     ("ok" if cok else ("err" if cok is False else "warn"),
+                      ("PASS" if cok else ("FAIL" if cok is False else "pending")))
+                     + '<span class="muted"> SP %s</span>' % esc(sp))
 
     links = []
     for label, key in (("shot", "screenshot"), ("dom", "dom"), ("model", "model"),
@@ -59,6 +69,13 @@ def view_row(v):
             links.append('<a href="%s">%s</a>' % (rel(folder, files[key]), label))
     if parity.get("report"):
         links.append('<a href="%s">parity report</a>' % rel(folder, parity["report"]))
+    if backend:
+        if (backend.get("contract") or {}).get("report"):
+            links.append('<a href="%s">contract report</a>' % rel(folder, backend["contract"]["report"]))
+        if backend.get("openapi"):
+            links.append('<a href="%s">openapi</a>' % rel(folder, backend["openapi"]))
+        if backend.get("backendModel"):
+            links.append('<a href="%s">backend-model</a>' % rel(folder, backend["backendModel"]))
     for rj in v.get("rejected", []):
         links.append('<a class="rej" href="%s">rejected</a>' % rel(folder, rj))
 
@@ -118,20 +135,28 @@ def main():
 
     if args.self_check:
         sample = {"views": [
-            {"id": "f000_login", "screen": "Login", "family": "shell", "state": "default", "folder": "f000_login",
+            {"id": "login_default", "screen": "Login", "family": "shell", "state": "default", "folder": "login_default",
              "data_mode": "live", "status": "verified", "usable": True, "isError": False,
              "files": {"screenshot": "screenshot.png", "model": "model.json", "sourceModel": "source-model.json"},
              "parity": {"report": "parity/report.md", "sideBySide": "parity/side-by-side.png", "pass": True,
                         "pixel": 0.002, "criticalDeltas": 0}},
-            {"id": "f010_err", "screen": "FA Summary", "family": "fa", "state": "default", "folder": "f010_err",
+            {"id": "summary_default", "screen": "Summary", "family": "orders", "state": "default", "folder": "summary_default",
+             "data_mode": "api", "status": "implemented", "usable": True, "isError": False,
+             "files": {"screenshot": "screenshot.png", "sourceModel": "source-model.json"},
+             "parity": {"report": "parity/report.md", "pass": True, "pixel": 0.001, "criticalDeltas": 0},
+             "backend": {"storedProcs": ["APP.GET_SUMMARY"], "backendModel": "backend-model.json",
+                         "openapi": "openapi/summary.openapi.yaml",
+                         "contract": {"report": "parity/summary.contract-report.md", "pass": True}}},
+            {"id": "detail_err", "screen": "Detail", "family": "orders", "state": "default", "folder": "detail_err",
              "data_mode": "record", "status": "blocked", "usable": False, "isError": True,
              "files": {"screenshot": "screenshot.png"}, "rejected": ["_rejected/a.png"]},
         ]}
         out = build_html(sample)
-        assert "f000_login" in out and "FA Summary" in out, "rows missing"
+        assert "login_default" in out and "Summary" in out, "rows missing"
         assert "ERROR PAGE" in out and "quarantined" in out, "error flags missing"
         assert "parity PASS" in out and "source-model.json" in out, "links/flags missing"
-        assert "shell" in out and "fa" in out, "family grouping missing"
+        assert "contract PASS" in out and "APP.GET_SUMMARY" in out, "backend contract flag missing"
+        assert "shell" in out and "orders" in out, "family grouping missing"
         print(json.dumps({"self_check": "ok", "html_bytes": len(out)}))
         return
 

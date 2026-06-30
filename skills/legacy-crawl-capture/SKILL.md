@@ -1,6 +1,6 @@
 ---
 name: legacy-crawl-capture
-description: Parse the JSP source into a source-model, discover every view in a legacy JSP/Struts web app (static routes AND AJAX-loaded views, reached from the start), and capture each view as comparable evidence (screenshot + normalized DOM model + a11y + the REAL backend responses via HAR) with error-page quarantine. Use when converting a legacy JSP/Java/Struts UI to React and you need the source-driven, source-of-truth evidence the jsp2react agents build from and verify against. Reuses the pod's webapp-snapshot (login/screenshots) and webapp-testing (Playwright/server) skills; adds JSP source extraction, AJAX view discovery, normalized capture, and real-response recording those skills do not provide.
+description: Parse the JSP source into a source-model, discover every view in a legacy JSP/Struts web app (static routes AND AJAX-loaded views, reached from the start), and capture each view as comparable evidence (screenshot + normalized DOM model + a11y + the REAL backend responses via HAR) with error-page quarantine. Use when converting a legacy JSP/Java/Struts UI to React and you need the source-driven, source-of-truth evidence the modernize-flow / jsp2react driver agent builds from and verifies against. Reuses the pod's webapp-snapshot (login/screenshots) and webapp-testing (Playwright/server) skills; adds JSP source extraction, AJAX view discovery, normalized capture, and real-response recording those skills do not provide.
 ---
 
 # legacy-crawl-capture
@@ -8,7 +8,7 @@ description: Parse the JSP source into a source-model, discover every view in a 
 Source-of-truth capture for the **jsp2react** system. fig2code extracts a static Figma design; this
 skill extracts a **live, running legacy screen** — and the original JSP/Struts source behind it.
 
-It is **source-driven** (v2): the builder builds from parsed JSP source, not from a screenshot.
+It is **source-driven**: the driver agent builds from parsed JSP source, not from a screenshot.
 1. **Parse** each JSP into a `source-model.json` (loops/forms/labels/AJAX endpoints) — the BUILD INPUT
    (`extract_jsp.py`; see `references/jsp-source-extraction.md`).
 2. **Discover** every view — static routes (`crawl_screens.py`) AND AJAX-loaded views reached from the
@@ -36,7 +36,7 @@ It is **source-driven** (v2): the builder builds from parsed JSP source, not fro
 
 ### extract_jsp.py — parse a JSP into `source-model.json` (the BUILD INPUT)
 ```bash
-python scripts/extract_jsp.py --jsp <webapp>/jsp/fateamprofile.jsp --webapp-dir <webapp> \
+python scripts/extract_jsp.py --jsp <webapp>/jsp/<flow>.jsp --webapp-dir <webapp> \
   --out <evidence>/<id_state>/source-model.json        # --self-check for a no-file sanity run
 ```
 Pragmatic regex parser (stdlib only). Extracts taglibs, includes/Tiles, JSTL loops/conditionals,
@@ -58,7 +58,7 @@ See `references/ajax-crawl-and-viewgraph.md`.
 # Authoritative inventory from source (no browser): actions + JSPs + links, reconciled by family.
 python scripts/crawl_screens.py \
   --struts-config <…>/WEB-INF/struts-config.xml \
-  --webapp-dir   <…>/BAA/src/main/webapp \
+  --webapp-dir   <…>/src/main/webapp \
   --out screens.json
 
 # Also emit a viewgraph of the static routes to reconcile with the AJAX crawl (crawl_ajax.py --merge):
@@ -67,7 +67,7 @@ python scripts/crawl_screens.py --struts-config <…> --webapp-dir <…> \
 ```
 Vendor/build dirs (`pdfjs`, `dojo`, `jquery*`, `lib`, `locale`, `node_modules`, `coverage`,
 `target`, `dist`, `build`) are pruned automatically. `screens.json.reconciliation` is the
-"did we miss a screen?" gate — every screen JSP/action must become a STATUS.md row or an explicit
+"did we miss a screen?" gate — every screen JSP/action must become a status.md row or an explicit
 unmatched entry in spec.md §4.
 
 ### capture_screen.py — capture ONE state as comparable evidence (legacy OR react)
@@ -75,14 +75,14 @@ This is the **authoritative parity capture** (not a quick screenshot — see the
 It enforces *semantic readiness* so the bundle reflects a **usable** screen, not just a rendered one.
 ```bash
 # Driven by a per-screen capture profile (preferred — same contract reused for the React side):
-python scripts/capture_screen.py --profile profiles/f010_fasummary.json \
+python scripts/capture_screen.py --profile profiles/f010_default.json \
   --out-dir work/evidence/f010_default --name legacy --auth-state auth_state.json --record-har
 
 # Or fully on the CLI:
 python scripts/capture_screen.py --url <legacy-screen-url> \
   --out-dir work/screenshots --name f010_default --auth-state auth_state.json \
   --viewport 1920x1080 --wait-for "#pmenu" \
-  --must-contain "Compensation" --must-contain "FA Profile" \
+  --must-contain "<a label that proves real data loaded>" \
   --wait-for-gone ".loadingMask" --wait-ms 8000
 ```
 Outputs `f010_default.{png,dom.html,model.json,a11y.json,network.json}` **plus a
@@ -118,7 +118,7 @@ Writes `fixtures.json` + `handlers.ts` (MSW v2) keyed by `METHOD pathname`, retu
 bytes (no hand-authored data). This is the **record-mode** data layer; **live-mode** views skip it and use
 the Vite proxy instead (see react-replica-kit `references/backend-data-modes.md`).
 
-## Typical analyzer flow (v2 — source-driven)
+## Typical analysis-mode flow (source-driven)
 ```
 PRE-CAPTURE TRIAGE            → reachable? auth e2e? canonical route? assets 200? one view hydrates?
                                 (references/runtime-readiness-and-auth.md §1 — do this ONCE first)
@@ -131,14 +131,14 @@ for each view:
   capture_screen.py --profile --record-har → <view>/{legacy.png,model.json,legacy.har,capture.json}
                                               (usable? error pages → _rejected/)
   capture_fixtures.py --har   → src/mocks/<view>  (record-mode replay; live-mode views skip)
-→ analyzer writes spec.md (source model + capture contract), seeds STATUS.md, MANIFEST.json,
+→ the driver agent writes spec.md (source model + capture contract), seeds status.md, MANIFEST.json,
   then build_index.py → evidence/INDEX.html (the navigable human index)
 ```
 Skip triage and you risk capturing hundreds of views of confident-wrong evidence (unstyled pages, error
 routes behind misleading `.do` links, views captured before async data hydrated).
 
 ## Reference
-- `references/jsp-source-extraction.md` — the `source-model.json` schema and how the builder builds from it.
+- `references/jsp-source-extraction.md` — the `source-model.json` schema and how the driver agent builds from it.
 - `references/ajax-crawl-and-viewgraph.md` — stateful AJAX discovery, the from-start rule, the `viewgraph.json`
   schema, and optional Crawljax normalization.
 - `references/runtime-readiness-and-auth.md` — **read before first capture.** Triage, semantic readiness,
@@ -147,5 +147,5 @@ routes behind misleading `.do` links, views captured before async data hydrated)
 - `references/struts-jsp-endpoint-mapping.md` — deriving each view's endpoints across the 3 backend layers
   (Struts `.do`, Spring REST, WS/feign→mainframe) and how that maps to the recorded responses + data wiring.
 - `templates/capture-profile.json` (repo root `templates/`) — the per-view capture-contract schema consumed
-  by `capture_screen.py --profile` and reused by the builder for the React capture.
+  by `capture_screen.py --profile` and reused by the driver agent for the React capture.
 

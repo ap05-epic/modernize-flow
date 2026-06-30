@@ -80,9 +80,34 @@ SIGNATURE_JS = r"""
 }
 """
 
+# Generic error markers (app-agnostic). App-specific ones — notably the app's own LOGIN route, which a
+# session-expiry redirect lands on and is a classic misleading target — are added at runtime from
+# --project (loginAction) + project.errorSignatures. See EXTRA_MARKERS below.
 ERROR_MARKERS = ("error 500", "error 404", "http status 5", "http status 4", "exception",
-                 "stack trace", "not found", "forbidden", "page not found", "an error has occurred",
-                 "loginaction.do")  # BAA standalone error/login route is a known misleading target
+                 "stack trace", "not found", "forbidden", "page not found", "an error has occurred")
+EXTRA_MARKERS = []   # populated in main() from project.json (login route basename + errorSignatures)
+
+
+def load_project(path):
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def project_error_markers(proj):
+    """Login route (basename) + any project.errorSignatures, lowercased — app-specific misleading targets."""
+    marks = []
+    login = (proj.get("loginAction") or "").strip()
+    if login:
+        base = login.rstrip("/").split("/")[-1].lower()
+        if base:
+            marks.append(base)            # e.g. 'loginaction.do' — derived, not hardcoded
+    marks += [str(s).lower() for s in (proj.get("errorSignatures") or [])]
+    return marks
 
 
 def sig_hash(skeleton):
@@ -91,7 +116,7 @@ def sig_hash(skeleton):
 
 def looks_like_error(snap):
     blob = ((snap.get("title", "") + " " + snap.get("url", "")).lower())
-    if any(mk in blob for mk in ERROR_MARKERS):
+    if any(mk in blob for mk in ERROR_MARKERS) or any(mk in blob for mk in EXTRA_MARKERS):
         return True
     if snap.get("bodyLen", 1) < 15:   # essentially blank
         return True
@@ -128,10 +153,16 @@ def main():
     ap.add_argument("--settle-ms", type=int, default=1500, help="Settle wait after each action (AJAX hydration).")
     ap.add_argument("--readiness-timeout", type=int, default=15000)
     ap.add_argument("--merge", action="append", help="Normalized external viewgraph(s) (e.g. from Crawljax) to fold in.")
+    ap.add_argument("--project", help="project.json — supplies the app's login route + errorSignatures as misleading-target markers.")
     ap.add_argument("--self-check", action="store_true")
     args = ap.parse_args()
 
     if args.self_check:
+        # project-driven markers: the app's own login route is a misleading target, derived not hardcoded
+        EXTRA_MARKERS[:] = project_error_markers({"loginAction": "/DEMO/loginAction.do", "errorSignatures": ["oops page"]})
+        assert looks_like_error({"title": "x", "url": "/DEMO/loginAction.do", "bodyLen": 99}), "project login marker miss"
+        assert looks_like_error({"title": "Oops Page", "url": "/y", "bodyLen": 99}), "project errorSignature miss"
+        EXTRA_MARKERS[:] = []
         try:
             import playwright  # noqa
             pw = True
@@ -153,6 +184,7 @@ def main():
 
     if not args.start_url or not args.out:
         raise SystemExit("--start-url and --out are required (or use --self-check)")
+    EXTRA_MARKERS[:] = project_error_markers(load_project(args.project))   # app login route + errorSignatures
     try:
         from playwright.sync_api import sync_playwright
     except Exception as e:

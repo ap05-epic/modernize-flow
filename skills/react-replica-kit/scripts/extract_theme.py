@@ -140,19 +140,19 @@ def main():
 
     if args.self_check:
         sample = """
-        /* c */ .panel { color:#006286; background-color:#E6E3E0; font-family:'Frutiger 45 Light',sans-serif;
+        /* c */ .panel { color:#1f4e79; background-color:#E6E3E0; font-family:'Brand Sans Light',sans-serif;
                  font-size:13px; padding:8px 8px; border-radius:3px; }
-        .h { color:#006286; font-size:18px; font-weight:700; margin:4px; }
-        a { color: rgba(0,98,134,1); }
+        .h { color:#1f4e79; font-size:18px; font-weight:700; margin:4px; }
+        a { color: rgba(31,78,121,1); }
         """
         c, f, s, w, sp, r = harvest(sample)
-        assert norm_hex("006286") in c and c[norm_hex("006286")] == 2, "color tally wrong: %s" % c
-        assert any("Frutiger" in k for k in f), "font miss"
+        assert norm_hex("1f4e79") in c and c[norm_hex("1f4e79")] == 2, "color tally wrong: %s" % c
+        assert any("Brand Sans" in k for k in f), "font miss"
         assert "13px" in s and "18px" in s, "size miss"
         assert "8px" in sp and "4px" in sp, "spacing miss"
         css = build_theme_css({"colors": ranked(c), "fontFamilies": ranked(f), "fontSizes": ranked(s),
                                "spacing": ranked(sp), "radii": ranked(r), "fontWeights": ranked(w)})
-        assert "--color-01: #006286;" in css, "theme.css color miss"
+        assert "--color-01: #1f4e79;" in css, "theme.css color miss"
         print(json.dumps({"self_check": "ok", "colors": len(c), "fonts": len(f), "sizes": len(s), "spacing": len(sp)}))
         return
 

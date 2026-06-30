@@ -12,21 +12,26 @@ Two layers:
      hand; this just harvests the easy reachable set.
 
 Output: screens.json  { actions[], jsps[], links[], families{}, reconciliation{} }
-The analyzer turns this into STATUS.md §4 rows and spec.md Section 3/4.
+The analyzer turns this into status.md §4 rows and spec.md Section 3/4.
 """
 import argparse, json, os, re, sys, xml.etree.ElementTree as ET
 
 PRUNE_DIRS = {"pdfjs", "dojo", "node_modules", "coverage", "target", "dist", "build", ".git",
               "lib", "locale", "cmaps", ".vscode"}
 PRUNE_RE = re.compile(r"(jquery|lodash|d3|clusterize|dataTables)", re.I)
-FAMILIES = ["fa", "cefs", "latam", "nnm", "shhp", "contentlet", "ipad"]
+
+# App taxonomy is NOT hardcoded. FAMILIES (explicit list) and PATH_CONVENTIONS (category -> path substrings)
+# come from project.json at runtime; when families is "auto"/empty the family is INFERRED from the source
+# structure (the jsp subdir / the struts action package). See main().
+FAMILIES = []            # e.g. ["fa","cefs",...]  from project.families (or [] => auto-infer)
+PATH_CONVENTIONS = {}    # e.g. {"alt-root":["/pjsp/"], "contentlet":["/jsp/contentlet/"]} from project.pathConventions
 
 SAMPLE_STRUTS = """<struts-config><action-mappings>
-  <action path="/fateamprofile" type="com.ubs.baa.struts.action.fa.FaTeamProfileAction" name="faForm">
-    <forward name="success" path="/jsp/fateamprofile.jsp"/>
+  <action path="/orderlist" type="com.example.app.struts.action.orders.OrderListAction" name="orderForm">
+    <forward name="success" path="/jsp/orders/orderlist.jsp"/>
     <forward name="error" path="/jsp/error.jsp"/>
   </action>
-  <action path="/login" type="com.ubs.baa.struts.action.LoginAction">
+  <action path="/login" type="com.example.app.struts.action.LoginAction">
     <forward name="success" path="/jsp/summary.jsp"/>
   </action>
 </action-mappings></struts-config>"""
@@ -34,10 +39,16 @@ SAMPLE_STRUTS = """<struts-config><action-mappings>
 
 def infer_family(path):
     s = path.lower()
-    for f in FAMILIES:
-        if "/" + f in s or s.startswith(f) or "." + f + "." in s:
-            return f
-    return "shell" if ("login" in s or "summary" in s or "home" in s) else "other"
+    if FAMILIES:                              # explicit taxonomy from project.json
+        for f in FAMILIES:
+            f = f.lower()
+            if "/" + f in s or s.startswith(f) or "." + f + "." in s or "/" + f + "/" in s:
+                return f
+    # auto-infer from structure (generic): shell screens, then jsp subdir, then action package segment
+    if any(w in s for w in ("login", "summary", "home", "dashboard", "index")):
+        return "shell"
+    m = re.search(r"/jsp/([a-z0-9_]+)/", s) or re.search(r"\.action\.([a-z0-9_]+)\.", s)
+    return m.group(1) if m else "other"
 
 
 def parse_struts(xml_text):
@@ -61,13 +72,11 @@ def parse_struts(xml_text):
 
 
 def categorize_jsp(rel):
-    s = rel.lower()
-    if "/pjsp/" in s or s.startswith("pjsp/"):
-        return "alt-root"
-    if "/jsp/contentlet/" in s:
-        return "contentlet"
-    if "/jsp/ipad/" in s:
-        return "ipad"
+    s = "/" + rel.lower().lstrip("/")                # normalize leading slash so "/jsp/x/" conventions match rel paths
+    for cat, subs in PATH_CONVENTIONS.items():       # project-defined path conventions (e.g. alt-root/contentlet/ipad)
+        for sub in subs:
+            if str(sub).lower() in s:
+                return cat
     if "/layouts/" in s or "layout" in os.path.basename(s):
         return "layout"
     if rel.endswith((".jspf", ".tag")) or "/inc/" in s or "fragment" in s:
@@ -141,13 +150,28 @@ def main():
     ap.add_argument("--auth-state", help="storage_state json for the runtime harvest.")
     ap.add_argument("--max-pages", type=int, default=60, help="Runtime BFS page cap.")
     ap.add_argument("--viewport", default="1920x1080")
+    ap.add_argument("--project", help="project.json — supplies families (taxonomy) + pathConventions; both auto-infer if omitted.")
     ap.add_argument("--self-check", action="store_true", help="Parse an embedded struts-config sample and exit.")
     args = ap.parse_args()
 
+    # load the app taxonomy from project.json (families=='auto'/absent => infer from structure)
+    if getattr(args, "project", None):
+        try:
+            _p = json.load(open(args.project, encoding="utf-8"))
+            _fam = _p.get("families")
+            if isinstance(_fam, list):
+                FAMILIES[:] = _fam
+            PATH_CONVENTIONS.clear()
+            PATH_CONVENTIONS.update(_p.get("pathConventions") or {})
+        except Exception:
+            pass
+
     if args.self_check:
         acts = parse_struts(SAMPLE_STRUTS)
-        assert len(acts) == 2 and acts[0]["action_do"] == "fateamprofile.do", acts
-        assert acts[0]["forwards"]["success"] == "/jsp/fateamprofile.jsp"
+        assert len(acts) == 2 and acts[0]["action_do"] == "orderlist.do", acts
+        assert acts[0]["forwards"]["success"] == "/jsp/orders/orderlist.jsp"
+        assert acts[0]["family"] == "orders", "auto-infer from action package failed: %s" % acts[0]["family"]
+        assert acts[1]["family"] == "shell", "login should infer shell: %s" % acts[1]["family"]
         print(json.dumps({"self_check": "ok", "actions_parsed": len(acts), "sample": acts[0]}, indent=1))
         return
 
@@ -182,7 +206,7 @@ def main():
             "jsp_count": len(jsps),
             "screen_jsp_count": sum(1 for j in jsps if j["type"] == "screen"),
             "fragment_count": sum(1 for j in jsps if j["type"] == "fragment"),
-            "note": "Every screen JSP / action should map to a STATUS.md row or an explicit unmatched entry in spec.md Section 4.",
+            "note": "Every screen JSP / action should map to a status.md row or an explicit unmatched entry in spec.md Section 4.",
         },
     }
     json.dump(out, open(args.out, "w", encoding="utf-8"), indent=1)

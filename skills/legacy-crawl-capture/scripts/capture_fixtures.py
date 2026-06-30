@@ -87,11 +87,11 @@ def main():
     args = ap.parse_args()
 
     if args.self_check:
-        net = [{"method": "GET", "url": "http://h/BAA/fateamprofile.do?fa=AB10", "status": 200,
+        net = [{"method": "GET", "url": "http://h/app/summary.do?id=123", "status": 200,
                 "resource_type": "xhr", "content_type": "application/json", "body": '{"rows":[1,2]}'}]
         fx = build(net, False)
-        assert "GET /BAA/fateamprofile.do" in fx and fx["GET /BAA/fateamprofile.do"]["body"] == {"rows": [1, 2]}, fx
-        har = {"log": {"entries": [{"request": {"method": "GET", "url": "http://h/api/comp?fa=AB10"},
+        assert "GET /app/summary.do" in fx and fx["GET /app/summary.do"]["body"] == {"rows": [1, 2]}, fx
+        har = {"log": {"entries": [{"request": {"method": "GET", "url": "http://h/api/comp?id=123"},
                 "response": {"status": 200, "content": {"mimeType": "application/json", "text": '{"ok":true}'}}}]}}
         import tempfile
         tf = os.path.join(tempfile.gettempdir(), "j2r_selfcheck.har")

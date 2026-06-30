@@ -37,7 +37,7 @@ python scripts/verify_screen.py \
   --out-dir <evidence>/f010_default/parity --name f010_default --data-mode record --pixel-threshold 0.005
 ```
 Writes `f010_default.parity-report.md` (read this), `.parity-report.json`, `.diff.png`,
-`.side-by-side.png`. **Exit code 0 = PASS, 2 = FAIL** — gate on it in the builder loop.
+`.side-by-side.png`. **Exit code 0 = PASS, 2 = FAIL** — gate on it in the implementation loop.
 PASS (record) = **0 critical structural deltas AND data present AND pixel ratio ≤ threshold AND no size
 mismatch**. PASS (live) = **0 critical deltas AND data present AND style match** (pixel advisory).
 
@@ -57,10 +57,10 @@ node scripts/pixel_diff.js --legacy a.png --react b.png \
 `--threshold` is the per-pixel pixelmatch sensitivity (0.1 default); the **gate** ratio is the
 `--pixel-threshold` in verify_screen.py. AA is excluded so font anti-aliasing doesn't create noise.
 
-## How the builder uses it (the fix loop)
+## How the driver agent uses it (the fix loop)
 ```
 implement/edit screen → capture_screen.py (react url) → verify_screen.py
-   PASS → mark STATUS.md verified
+   PASS → mark status.md verified
    FAIL → read parity-report.md → fix the criticals, then the located pixel regions → re-run
 ```
 The report is the spec for the next edit. Never mark `verified` without a PASS.

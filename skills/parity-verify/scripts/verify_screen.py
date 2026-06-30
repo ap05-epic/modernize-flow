@@ -124,7 +124,7 @@ def build_report_md(name, result):
         lines.append("")
 
     if g["pass"]:
-        lines.append("All gates passed. Mark this screen/state `verified` in STATUS.md.")
+        lines.append("All gates passed. Mark this screen/state `verified` in status.md.")
     else:
         lines.append("Fix the criticals first (DOM lane), then the located pixel regions (use the style hints), then re-run verify_screen.py.")
     return "\n".join(lines) + "\n"

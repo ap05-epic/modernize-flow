@@ -11,7 +11,7 @@ geometry, spacing) — and how parity verifies the result.
 1. Style each element with the theme tokens; use the captured `style{}` to choose the matching token and to
    set geometry (box metrics aren't in the palette). Don't paste a raw hex when a token exists.
    ```css
-   /* FaTeamProfile.module.css — colors/fonts via theme vars; geometry from the captured box */
+   /* <Flow>.module.css — colors/fonts via theme vars; geometry from the captured box */
    .panel { color: var(--color-03); background-color: var(--color-07);
             font-family: var(--font-1); font-size: var(--fs-13); line-height: 15px; letter-spacing: 1px;
             width: 792px; padding: 8px 12px; border: 1px solid var(--color-11); box-sizing: border-box; }
@@ -31,7 +31,7 @@ geometry, spacing) — and how parity verifies the result.
 
 ## Icons, images, and other assets — reuse, never recreate
 
-- Copy the exact legacy asset (`platform/images/*`, `*.svg`, `ubs-icons`) into `public/assets/` and
+- Copy the exact legacy asset (`platform/images/*`, `*.svg`, `<app>-icons`) into `public/assets/` and
   reference it. Recreating an icon by hand is a "new artifact" and will fail parity.
 - Match the rendered size/position of the asset from the captured box, not the intrinsic file size.
 

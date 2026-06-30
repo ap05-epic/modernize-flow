@@ -1,18 +1,19 @@
 {
   "_schema": {
-    "purpose": "Auto-maintained ledger of every view's evidence, ONE ENTRY PER VIEW (per-view folder). Drives evidence/INDEX.html (build_index.py) and tells both agents what evidence exists and its parity verdict. v2: per-view folders replace the old by-type folders so a human can actually follow one view's files.",
+    "purpose": "Auto-maintained machine ledger of every view's evidence, ONE ENTRY PER VIEW (per-view folder). Drives evidence/INDEX.html (build_index.py). Auxiliary to the modernize-flow contract (status.md/spec.md), not a replacement for it. FULL mode also records each flow's backend-contract status.",
     "invariants": [
       "One folder per view at evidence/<folder>/ holding legacy.* and react.* plus source-model.json, nav-path.json, parity/.",
-      "Every view in STATUS.md with status >= 'analyzed' has an entry here; quarantined error captures are listed in 'rejected', NOT promoted as evidence.",
+      "Every feature/view in status.md past 'in progress' has an entry here; quarantined error captures are listed in 'rejected', NOT promoted as evidence.",
+      "status values match status.md EXACTLY: not started | in progress | implemented | verified | signed off | blocked.",
       "sha256 (in each capture.json) lets a re-run detect changed captures."
     ],
     "view_entry_shape": {
-      "id": "<screen>_<state>, e.g. f010_default (also the folder name)",
-      "screen": "human name", "family": "shell|fa|cefs|latam|nnm|shhp|contentlet|ipad|...",
+      "id": "<screen>_<state>, e.g. fasummary_default (also the folder name)",
+      "screen": "human name", "family": "shell|<family inferred or from project.families>",
       "state": "default|empty|error|tab:<name>|modal:<name>|...",
       "folder": "evidence-root-relative folder, usually == id",
-      "data_mode": "record|live (how the React side gets REAL data)",
-      "status": "analyzed|implemented|verified|blocked",
+      "data_mode": "record|live|api (api = served by the new Spring Boot endpoint, FULL mode)",
+      "status": "not started|in progress|implemented|verified|signed off|blocked",
       "usable": "true only if the legacy capture passed readiness + is not an error page",
       "isError": "true if the captured page was an error/wrong view (then it lives under _rejected/)",
       "navPathFromStart": "the from-start click-path used to reach this view (mirrors nav-path.json)",
@@ -21,45 +22,51 @@
         "reactModel": "react.model.json", "sourceModel": "source-model.json",
         "navPath": "nav-path.json", "har": "legacy.har", "capture": "legacy.capture.json"
       },
-      "endpoints": [{ "method": "GET", "path": "/BAA/fateamprofile.do", "layer": "struts", "trigger": "tab:Compensation" }],
+      "endpoints": [{ "method": "GET", "path": "/<ctx>/<flow>.do", "layer": "struts", "trigger": "tab:<name>" }],
       "parity": { "report": "parity/<id>.parity-report.md", "sideBySide": "parity/<id>.side-by-side.png",
                   "pass": null, "pixel": null, "criticalDeltas": null, "dataPresent": null, "last_run": null },
+      "backend": { "_full_mode_only": true, "backendModel": "<flow>/backend-model.json",
+                   "storedProcs": ["<SCHEMA.PROC>"], "generatedFiles": ["controller/<Flow>Controller.java", "service/<Flow>Service.java", "service/<Flow>ServiceImpl.java", "gateway/<Flow>Gateway.java", "dto/<Flow>Dto.java"],
+                   "openapi": "openapi/<flow>.openapi.yaml",
+                   "contract": { "report": "parity/<flow>.contract-report.md", "pass": null, "missingFields": null, "last_run": null } },
       "rejected": ["_rejected/legacy.png — quarantined error capture (if any)"]
     }
   },
 
   "run": {
     "project": "<project name>",
+    "mode": "full|frontend",
     "legacy_url": "<entry url>",
     "evidence_root": "<abs path>",
     "viewport": "1920x1080",
     "theme": "theme/theme.css",
     "tokens": "theme/tokens.json",
     "viewgraph": "viewgraph.json",
-    "generated_by": "legacy-crawl-capture",
-    "schema_version": 2
+    "generated_by": "legacy-crawl-capture + springboot-target-kit (FULL)",
+    "schema_version": 3
   },
 
   "views": [
     {
-      "id": "f000_default",
+      "id": "login_default",
       "screen": "Login page",
       "family": "shell",
       "state": "default",
-      "folder": "f000_default",
+      "folder": "login_default",
       "data_mode": "live",
-      "status": "analyzed",
+      "status": "not started",
       "usable": true,
       "isError": false,
-      "navPathFromStart": [{ "action": "navigate", "url": "/BAA/jsp/login.jsp" }],
+      "navPathFromStart": [{ "action": "navigate", "url": "/<ctx>/jsp/login.jsp" }],
       "files": {
         "screenshot": "legacy.png", "dom": "legacy.dom.html", "model": "legacy.model.json",
         "reactModel": "react.model.json", "sourceModel": "source-model.json",
         "navPath": "nav-path.json", "har": "legacy.har", "capture": "legacy.capture.json"
       },
-      "endpoints": [{ "method": "POST", "path": "/BAA/loginAction.do", "layer": "struts", "trigger": "submit" }],
-      "parity": { "report": "parity/f000_default.parity-report.md", "sideBySide": "parity/f000_default.side-by-side.png",
+      "endpoints": [{ "method": "POST", "path": "/<ctx>/loginAction.do", "layer": "struts", "trigger": "submit" }],
+      "parity": { "report": "parity/login_default.parity-report.md", "sideBySide": "parity/login_default.side-by-side.png",
                   "pass": null, "pixel": null, "criticalDeltas": null, "dataPresent": null, "last_run": null },
+      "backend": null,
       "rejected": []
     }
   ]

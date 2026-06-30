@@ -51,6 +51,6 @@ observable output is frozen.
 
 ## When evidence is incomplete
 
-If a visible state has no captured screenshot/DOM AND no source model, STOP and have the analyzer
-capture/parse it — do not infer layout, copy, columns, or controls. Never build from a quarantined
+If a visible state has no captured screenshot/DOM AND no source model, STOP and have the driver agent
+(analysis mode) capture/parse it — do not infer layout, copy, columns, or controls. Never build from a quarantined
 (`_rejected/`) error capture. (Mirrors fig2code's Missing State Protocol and "no visual inference".)

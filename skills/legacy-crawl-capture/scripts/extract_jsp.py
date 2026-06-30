@@ -3,7 +3,7 @@
 extract_jsp.py — pragmatic JSP/JSTL/Struts source extractor.
 
 Turns ONE JSP (and the *.js it references) into a structured `source-model.json` the
-jsp2react-builder builds FROM — so the React port comes from the actual source structure,
+the driver agent builds FROM — so the React port comes from the actual source structure,
 labels, loops, forms, and AJAX endpoints, NOT from guessing at a screenshot.
 
 It is deliberately a *pragmatic* parser (regex + stdlib only — JSP with scriptlets/taglibs
@@ -182,27 +182,27 @@ def main():
         <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
         <%@ taglib prefix="html" uri="/WEB-INF/struts-html.tld" %>
         <%@ include file="/jsp/inc/header.jspf" %>
-        <html:form action="/fateamprofile.do">
-          <html:text property="faNumber"/>
+        <html:form action="/summary.do">
+          <html:text property="accountId"/>
           <html:select property="entityLevel"/>
         </html:form>
-        <c:forEach items="${comp.rows}" var="row" varStatus="s">
+        <c:forEach items="${data.rows}" var="row" varStatus="s">
           <c:if test="${row.active}">${row.name}</c:if>
         </c:forEach>
-        <bean:message key="fa.profile.title"/>
-        <script src="js/fa.js"></script>
-        <script> $.ajax({ url: "/BAA/fadetail.do?tab=comp" }); $("#g").load("/BAA/grid.do"); </script>
+        <bean:message key="page.title"/>
+        <script src="js/page.js"></script>
+        <script> $.ajax({ url: "/app/detail.do?tab=info" }); $("#g").load("/app/grid.do"); </script>
         '''
         m = build_model(sample, "sample.jsp", scan_js=False)
         assert any(t["prefix"] == "c" for t in m["taglibs"]), "taglib miss"
-        assert m["loops"] and m["loops"][0]["items"] == "${comp.rows}" and m["loops"][0]["var"] == "row", "loop miss"
+        assert m["loops"] and m["loops"][0]["items"] == "${data.rows}" and m["loops"][0]["var"] == "row", "loop miss"
         assert any(c["kind"] == "if" for c in m["conditionals"]), "conditional miss"
-        assert m["forms"] and any(f["property"] == "faNumber" for f in m["forms"][0]["fields"]), "form field miss"
+        assert m["forms"] and any(f["property"] == "accountId" for f in m["forms"][0]["fields"]), "form field miss"
         assert all(f["tag"] != "html:form" for f in m["forms"][0]["fields"]), "form wrapper leaked into fields"
-        assert any(k["key"] == "fa.profile.title" for k in m["messageKeys"]), "message key miss"
+        assert any(k["key"] == "page.title" for k in m["messageKeys"]), "message key miss"
         urls = {e["url"] for e in m["ajaxEndpoints"]}
-        assert "/BAA/fadetail.do?tab=comp" in urls and "/BAA/grid.do" in urls, "ajax miss: %s" % urls
-        assert "js/fa.js" in m["scripts"], "script ref miss"
+        assert "/app/detail.do?tab=info" in urls and "/app/grid.do" in urls, "ajax miss: %s" % urls
+        assert "js/page.js" in m["scripts"], "script ref miss"
         print(json.dumps({"self_check": "ok", "loops": len(m["loops"]), "fields": len(m["forms"][0]["fields"]),
                           "ajax": len(m["ajaxEndpoints"]), "messageKeys": len(m["messageKeys"])}))
         return

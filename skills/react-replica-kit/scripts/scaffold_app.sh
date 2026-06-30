@@ -12,15 +12,39 @@
 # No component library (would restyle and break "no new artifacts"). Plain CSS Modules + a global
 # theme.css of legacy-derived CSS variables (from extract_theme.py).
 #
-# Usage:  bash scaffold_app.sh <target-dir> [path/to/theme.css]
-#   env:  VITE_BACKEND (default http://127.0.0.1:8080)   VITE_PROXY_PATHS (default "/BAA,/api")
+# Usage:  bash scaffold_app.sh <target-dir> [path/to/theme.css] [project.json]
+#   project.json supplies the app's contextRoot / legacyBaseUrl / loginAction / loginFields / proxyPaths;
+#   without it, generic defaults are used. Per-screen data mode is still chosen at runtime via VITE_DATA_MODE.
+#   env override:  VITE_BACKEND, VITE_PROXY_PATHS, VITE_LOGIN_ACTION  (the generated defaults come from project.json)
 set -euo pipefail
 
 [ "${1:-}" = "--check" ] && { command -v node >/dev/null && command -v npm >/dev/null && echo "scaffold_app: node/npm present" && exit 0 || { echo "scaffold_app: node/npm MISSING"; exit 1; }; }
 
 TARGET="${1:-}"
 THEME_SRC="${2:-}"
-[ -z "$TARGET" ] && { echo "usage: scaffold_app.sh <target-dir> [theme.css]"; exit 1; }
+PROJECT="${3:-}"
+[ -z "$TARGET" ] && { echo "usage: scaffold_app.sh <target-dir> [theme.css] [project.json]"; exit 1; }
+
+# Resolve app-specific defaults from project.json (generic fallbacks otherwise). No app name is hardcoded.
+BACKEND="http://127.0.0.1:8080"; PROXY_PATHS="/api"; LOGIN_ACTION="/login.do"; USER_FIELD="username"; PASS_FIELD="password"
+PYBIN="$(command -v python3 || command -v python || true)"
+if [ -n "$PROJECT" ] && [ -f "$PROJECT" ] && [ -n "$PYBIN" ]; then
+  eval "$("$PYBIN" - "$PROJECT" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+def q(v): return str(v).replace("'","").replace("\n"," ")
+cr=d.get("contextRoot") or ""
+pp=d.get("proxyPaths") or [x for x in [cr,"/api"] if x]
+lf=d.get("loginFields") or {}
+print("BACKEND='%s'"%q(d.get("legacyBaseUrl") or "http://127.0.0.1:8080"))
+print("PROXY_PATHS='%s'"%q(",".join(pp) or "/api"))
+print("LOGIN_ACTION='%s'"%q(d.get("loginAction") or ((cr.rstrip('/') if cr else "")+"/login.do")))
+print("USER_FIELD='%s'"%q(lf.get("user") or "username"))
+print("PASS_FIELD='%s'"%q(lf.get("password") or "password"))
+PY
+)"
+  echo "   project: backend=$BACKEND proxy=$PROXY_PATHS login=$LOGIN_ACTION fields=$USER_FIELD/$PASS_FIELD"
+fi
 if [ -e "$TARGET" ] && [ -n "$(ls -A "$TARGET" 2>/dev/null || true)" ]; then
   echo "refusing: '$TARGET' exists and is not empty"; exit 1
 fi
@@ -44,8 +68,8 @@ import react from '@vitejs/plugin-react'
 // Live mode: proxy real backend calls (keeps cookies/session so REAL data renders, no fakes).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const backend = env.VITE_BACKEND || 'http://127.0.0.1:8080'
-  const paths = (env.VITE_PROXY_PATHS || '/BAA,/api').split(',').map(s => s.trim()).filter(Boolean)
+  const backend = env.VITE_BACKEND || '__BACKEND__'
+  const paths = (env.VITE_PROXY_PATHS || '__PROXY_PATHS__').split(',').map(s => s.trim()).filter(Boolean)
   const proxy = Object.fromEntries(paths.map(p => [p, {
     target: backend, changeOrigin: true, secure: false, cookieDomainRewrite: 'localhost',
   }]))
@@ -111,52 +135,56 @@ else
   echo "   wrote placeholder src/theme.css (no theme passed)"
 fi
 
-echo ">> seeding the Login screen (F000) — auth is real; its session feeds backend data calls"
+echo ">> seeding the Login screen (login flow) — auth is real; its session feeds backend data calls"
 mkdir -p src/screens/Login
 cat > src/screens/Login/Login.tsx <<'EOF'
 import { useState } from 'react'
-// F000 Login — rebuild 1:1 from the captured login screen + its source-model.json.
+// Login — rebuild 1:1 from the captured login screen + its source-model.json.
 // Posts the REAL login action so the established session authenticates subsequent data calls.
-const LOGIN_ACTION = import.meta.env.VITE_LOGIN_ACTION || '/BAA/loginAction.do'
+// LOGIN_ACTION + the wire field names come from project.json (loginAction / loginFields).
+const LOGIN_ACTION = import.meta.env.VITE_LOGIN_ACTION || '__LOGIN_ACTION__'
 export default function Login({ onAuthed }: { onAuthed?: () => void }) {
-  const [userId, setUserId] = useState('')
-  const [password, setPassword] = useState('')
+  const [user, setUser] = useState('')
+  const [pass, setPass] = useState('')
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     await fetch(LOGIN_ACTION, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ userId, password }),
+      body: new URLSearchParams({ '__USER_FIELD__': user, '__PASS_FIELD__': pass }),
     })
     onAuthed?.()
   }
   // TODO(builder): replace markup/labels/styles to match the captured login screen exactly.
   return (
     <form onSubmit={submit}>
-      <input name="userId" value={userId} onChange={e => setUserId(e.target.value)} />
-      <input name="password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
+      <input name="__USER_FIELD__" value={user} onChange={e => setUser(e.target.value)} />
+      <input name="__PASS_FIELD__" type="password" value={pass} onChange={e => setPass(e.target.value)} />
       <button type="submit">Log in</button>
     </form>
   )
 }
 EOF
+# inject the project-resolved login action + wire field names + proxy/backend defaults (placeholders -> values)
+sed -i.bak "s#__BACKEND__#${BACKEND}#g; s#__PROXY_PATHS__#${PROXY_PATHS}#g" vite.config.ts && rm -f vite.config.ts.bak
+sed -i.bak "s#__LOGIN_ACTION__#${LOGIN_ACTION}#g; s#__USER_FIELD__#${USER_FIELD}#g; s#__PASS_FIELD__#${PASS_FIELD}#g" src/screens/Login/Login.tsx && rm -f src/screens/Login/Login.tsx.bak
 
 cat > src/App.tsx <<'EOF'
 // Minimal shell. The builder adds one screen per iteration under src/screens/<Name>/ and routes by
-// STATUS.md ID (hash route, e.g. #/f010). F000 Login is the first screen; its session enables data.
+// status.md ID (hash route, e.g. #/<id>). The login screen is built first; its session enables data.
 export default function App() {
   return (
     <div id="app-root">
-      <p>jsp2react replica shell. Build screens under <code>src/screens/</code>; route by STATUS.md ID.</p>
+      <p>jsp2react replica shell. Build screens under <code>src/screens/</code>; route by status.md ID.</p>
     </div>
   )
 }
 EOF
 
 echo ""
-echo "DONE. Data modes (set per screen via STATUS.md / env):"
+echo "DONE. Data modes (set per screen via status.md / env):"
 echo "  record (default):  python <…>/legacy-crawl-capture/scripts/capture_fixtures.py \\"
 echo "        --har work/evidence/<view>/legacy.har --out src/mocks/<view>   # REAL responses -> handlers"
 echo "        npm run dev"
-echo "  live:              VITE_DATA_MODE=live VITE_BACKEND=http://127.0.0.1:8080 npm run dev   # real backend via proxy"
+echo "  live:              VITE_DATA_MODE=live VITE_BACKEND=$BACKEND npm run dev   # real backend via proxy ($PROXY_PATHS)"
 echo "  theme: colors/fonts come from src/theme.css (extract_theme.py). Build screens under src/screens/<Name>/."

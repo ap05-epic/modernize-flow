@@ -1,107 +1,107 @@
-# jsp2react — Legacy JSP/Struts UI → React+TS, with proven 1:1 fidelity
+# modernize-flow / jsp2react — Legacy JSP/Struts → React (+ Spring Boot), with proven fidelity
 
-A **skills + agents** system for GitHub Copilot CLI (GPT‑5.4). Given a legacy JSP/Java/Struts web app's
-URL, it logs in, **extracts the real color/font theme**, discovers **every view including AJAX-loaded ones**
-(reached from the start), **parses each JSP into a source model**, builds a **React + TypeScript 1:1 replica
-from that source**, feeds it the **real backend data**, and **proves** each match deterministically — then
-serves originals next to replicas for review.
+A **skills + agents** toolkit for GitHub Copilot CLI (GPT‑5.4) that modernizes a legacy JSP/Java/Struts app
+**from its source**. Given the legacy URL + how to log in (+ a small `project.json`), it logs in, **extracts the
+real color/font theme**, discovers **every view including AJAX‑loaded ones** (reached from the start), **parses
+each JSP into a source model**, and builds a **React + TypeScript 1:1 replica from that source**, fed the **real
+backend data** — and in full‑stack mode it also **traces the legacy data layer (action → service → DAO → stored
+procedure)** and generates a **Spring Boot** endpoint (controller → service → SimpleJdbcCall gateway → DTO) that
+**reproduces** that data. Every slice is **proven** against the running legacy app and the recorded responses.
 
-It is the live-app analog of **fig2code** (Figma→code): same conventions and status‑driven loop, but it is
-**source-driven** — the build input is the *JSP/AJAX/CSS source*, and the running screen is the verification
-target (not a static design, and not a screenshot the AI guesses from).
+It is **generic** (any legacy app via `project.json`) and **source‑driven** — the build input is the
+JSP/AJAX/CSS/Java source; the running screen is the verification target (not a screenshot the AI guesses from).
+
+## Two modes (pick at install time)
+
+| Mode | Agent | Target | Skills installed |
+|---|---|---|---|
+| **full** (default) | `modernize-flow` | React **+ Spring Boot** (calls the legacy stored procs) | all 4 |
+| **frontend** (fallback) | `jsp2react` | React only (talks to the existing legacy backend) | 3 (no `springboot-target-kit`) |
+
+The frontend mode is the safe retreat if the full‑stack path gets too complex — same UI engine, no backend.
 
 ## Quick start (manual phase)
 
 ```bash
 git clone https://github.com/ap05-epic/jsp2react.git
 cd jsp2react
-bash install.sh        # copies skills+agents into ~/.copilot, installs pixel-diff deps, checks prereqs
+bash install.sh full        # or: bash install.sh frontend
 ```
-Then in Copilot, run the **jsp2react-analyzer** agent and give it just the **legacy URL + how to log in** —
-it bootstraps `STATUS.md` itself (no hand-editing) and captures every screen. Then run **jsp2react-builder**
-repeatedly to build + verify one screen at a time (exact prompts in [SETUP.md §6b](SETUP.md)). Prereqs the
-installer checks for: Node.js, Python 3 + Playwright. *(Later, `dc agent install jsp2react` replaces `install.sh`.)*
+`install.sh` does a **clean install**: it purges this toolkit's managed skills/agents (and the retired v2 agents)
+from `~/.copilot`, then installs exactly the chosen mode's set — so the pod is never on stale files. It only
+touches files this toolkit owns. Then in Copilot, run the **`modernize-flow`** (or **`jsp2react`**) agent and give
+it the **legacy URL + how to log in + a `project.json`** — it bootstraps `status.md` itself and works one
+control/slice at a time (exact prompts in [SETUP.md §6b](SETUP.md)). Prereqs the installer checks: Node.js,
+Python 3 + Playwright (full mode also checks for a JDK + Maven/Gradle).
 
-## How it works (two agents, one contract, three skills)
+**Revert:** the v2 frontend‑only system is tagged `v2.0-frontend-only` (and branch `v2-backup`) — restore with
+`git reset --hard v2.0-frontend-only`, or just run `install.sh frontend` for the functional fallback.
+
+## How it works (one driver agent + four skills + one contract)
 
 ```
-                 ┌────────────────────────── STATUS.md  (control plane) ──────────────────────────┐
-                 │                            spec.md    (screen catalog / parity contract)        │
-                 │                            MANIFEST.json (artifact ledger)                      │
-                 └───────────────▲───────────────────────────────────────────────▲────────────────┘
-                                 │ seeds                                          │ reads/updates
-   ┌─────────────────────────────┴───────────┐               ┌──────────────────┴──────────────────────┐
-   │  jsp2react-analyzer  (Agent 1)           │   handoff     │  jsp2react-builder  (Agent 2, fig2code)   │
-   │  login → extract theme → discover every  │ ────────────▶ │  per view: build 1:1 FROM source-model +  │
-   │  view (static+AJAX) → parse JSP→source-  │               │  theme → wire REAL data (record/live) →   │
-   │  model → capture + record REAL responses │               │  PROVE parity → fix → verify              │
-   └───────────────┬──────────────────────────┘               └──────────────┬────────────────────────────┘
-                   │ uses                                                     │ uses
-        ┌──────────┴───────────┐                          ┌──────────────────┴──────────┬──────────────────┐
-        │ legacy-crawl-capture │                          │ parity-verify (proof engine) │ react-replica-kit │
-        │ parse+discover+capture│                         │ pixel+DOM+data-presence diff │ theme+app+data+index│
-        └──────────────────────┘                          └──────────────────────────────┴───────────────────┘
+                 ┌───────────────── status.md (control plane) · spec.md (contract) · MANIFEST.json (ledger) ─────────────────┐
+                 └───────────────────────────────▲──────────────────────────────────────────▲────────────────────────────────┘
+                                                  │ seeds (analysis mode)                     │ reads/updates (implementation mode)
+                       ┌──────────────────────────┴───────────────────────────────────────────┴──────────────────────────┐
+                       │   DRIVER AGENT   (modernize-flow = full · jsp2react = frontend)                                  │
+                       │   analysis: discover + parse + capture →  implementation: build 1:1 FROM SOURCE → prove → fix    │
+                       └───────┬───────────────────┬────────────────────────┬──────────────────────────┬──────────────────┘
+                               │ uses              │ uses                   │ uses                     │ uses (FULL only)
+                   ┌───────────┴────────┐ ┌────────┴─────────┐ ┌────────────┴──────────┐ ┌────────────┴───────────────┐
+                   │ legacy-crawl-capture│ │ react-replica-kit│ │ parity-verify         │ │ springboot-target-kit       │
+                   │ parse JSP · discover│ │ theme · scaffold ·│ │ pixel+DOM+data-presence│ │ trace action→service→DAO→SP │
+                   │ AJAX · capture+HAR  │ │ build view · index│ │ + contract gate        │ │ scaffold Spring Boot · verify│
+                   └─────────────────────┘ └───────────────────┘ └────────────────────────┘ └─────────────────────────────┘
         reuses pod skills: webapp-snapshot (login/screenshots) · webapp-testing (Playwright/server) · digimem
 ```
 
-**The loop (per view, status‑driven so it never drifts over a long sweep):**
-`READ STATUS.md → READ source-model + theme + evidence → IMPLEMENT 1:1 FROM SOURCE → wire REAL data
-(record HAR replay / live proxy) → verify_screen.py (pixel + DOM + data-presence) → FIX from the concrete
-delta report → re‑verify → mark verified → regenerate INDEX.html.`
+**The loop (per control/slice, status‑driven so it never drifts over a long sweep):**
+`READ status.md → READ source-model (+ backend-model, FULL) + theme + evidence → BUILD 1:1 FROM SOURCE → wire REAL
+data (record HAR replay / live proxy / new api) → verify_screen.py (+ verify_contract.py, FULL) → FIX from the
+concrete delta → mark verified → regenerate INDEX.html.`
 
 ## How each non‑negotiable is met
 
 | Requirement | Where it's enforced |
 |---|---|
-| **Built from source, not the image** | `extract_jsp.py` → `source-model.json` is the builder's input (loops/forms/labels/AJAX endpoints); the screenshot only verifies. Stops the AI guessing structure off a picture. |
-| **1:1 fidelity** | `parity-verify` DOM lane = strict (copy, labels, field/tab order, columns, validation must match exactly); evidence‑tagged spec; "never infer a view you haven't captured or parsed". |
-| **Every view found (incl. AJAX)** | `crawl_ajax.py` walks UI states from the start (tabs/menus/drilldowns), reconciled with the static `crawl_screens.py` inventory into `viewgraph.json`; each view carries a from-start click-path. |
-| **Right colors/fonts** | `extract_theme.py` harvests the legacy palette/fonts from the CSS source into `theme.css` tokens the app styles from — no per-element guessing. |
-| **No new artifacts** | Fresh app, **no component library**; faithful HTML/CSS port; reuse legacy assets; explicit may/may‑not‑change rules in `jsp-to-react-mapping.md`. |
-| **Real data, never fakes** | Two modes, per view: **record** replays the REAL responses recorded to HAR (exact parity); **live** proxies the real backend via Vite (real-time). No hand-authored data. Login (F000) is rebuilt so its session authorizes the calls. |
-| **No wrong pages accepted** | `capture_screen.py` checks the HTTP status + error signatures and **quarantines** error/half-loaded pages to `_rejected/`; they're never promoted as the view. |
-| **Fidelity proven, not claimed** | Deterministic gate (`verify_screen.py`, exit 0/2): 0 critical structural deltas **and** data present **and** (record) pixel ≤ threshold / (live) style match — numeric report + located diff regions + side‑by‑side. The model **fixes from findings**; it does not judge by eye. |
-| **Holds up over long multi‑view runs** | One view per iteration, STATUS.md coverage matrix + strict status semantics + recover‑before‑blocker + source-backed debugging + continue‑while‑reachable rules. |
+| **Generic (any app)** | `project.json` (+ `examples/baa.project.json`) drives every script — context root, login, families, theme, db/sqlmaps. No app name is hardcoded in runtime logic. |
+| **Built from source, not the image** | `extract_jsp.py` → `source-model.json` is the UI build input; `extract_backend.py` → `backend-model.json` is the data build input. The screenshot only verifies. |
+| **Every view found (incl. AJAX)** | `crawl_ajax.py` walks UI states from the start (tabs/menus/drilldowns), reconciled with the static `crawl_screens.py` inventory into `viewgraph.json`; each view carries a from‑start click‑path. |
+| **Right colors/fonts** | `extract_theme.py` harvests the legacy palette/fonts into `theme.css` tokens the app styles from — no per‑element guessing. |
+| **Real data, never fakes** | Frontend: **record** replays the REAL recorded HAR / **live** proxies the real backend. Backend (FULL): the new endpoint calls the **same stored procedure** and is checked against the recorded HAR. No hand‑authored data. |
+| **Full‑stack backend** | `springboot-target-kit` traces action→service→DAO→stored proc → `backend-model.json` → scaffolds controller/service/gateway/DTO/OpenAPI; the agent fills the business logic; `verify_contract.py` proves it vs the legacy HAR. |
+| **No wrong pages accepted** | `capture_screen.py` checks HTTP status + error signatures and **quarantines** error/half‑loaded pages to `_rejected/`; never promoted as the view. |
+| **Fidelity proven, not claimed** | Deterministic gates (`verify_screen.py` frontend, `verify_contract.py` backend; exit 0/2) — numeric reports + located diffs + side‑by‑side. The model fixes from findings; it does not judge by eye. |
+| **Holds up over long runs** | One slice per iteration; control‑level `status.md` inventory + strict 6‑status lifecycle + recover‑before‑blocker + source‑backed debugging. |
 
 ## What's here
 
 ```
 jsp2react/
-├── install.sh           ← one command: places skills+agents + installs deps (manual phase)
-├── README.md            ← you are here (technical entry point)
+├── install.sh           ← clean install, MODE = full | frontend  (manual phase)
+├── README.md            ← you are here
 ├── SETUP.md             ← detailed stand-up + the Copilot prompts (read this next)
-├── docs/
-│   └── HOW-IT-WORKS.md  ← plain-English explainer (use this to understand it / show colleagues)
-├── agents/              ← jsp2react-analyzer.agent.md · jsp2react-builder.agent.md
-├── skills/              ← legacy-crawl-capture · parity-verify · react-replica-kit (each a SKILL.md + scripts)
-└── templates/           ← STATUS.md · spec.md · MANIFEST.json · capture-profile.json (copied into a run)
+├── docs/HOW-IT-WORKS.md ← plain-English explainer (use this to understand it / show colleagues)
+├── agents/              ← modernize-flow.agent.md (full) · jsp2react.agent.md (frontend fallback)
+├── skills/              ← legacy-crawl-capture · react-replica-kit · parity-verify · springboot-target-kit
+├── templates/           ← status.md · spec.md · MANIFEST.json · capture-profile.json · project.json
+└── examples/            ← baa.project.json (a worked project config)
 ```
 
-New here? Read **[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)** first — it explains the whole thing in
-plain language.
+New here? Read **[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)** first — it explains the whole thing in plain language.
 
 ## Reuse & open source
 
-Reuses the pod's existing skills rather than reinventing them: `webapp-snapshot` (login via
-`save_auth_state.py`, screenshots), `webapp-testing` (Playwright + `with_server.py`), `digimem` (team
-memory). Pulls three MIT open‑source packages, all installed manually (see SETUP.md): **pixelmatch** +
-**pngjs** (pixel diff), **MSW** (fixture rendering), and **Vite/React/TypeScript** (scaffold).
-
-## Limitations & optional upgrades (deliberately not in the running system)
-
-Kept out on purpose to keep the agents simple for GPT‑5.4 — noted here as *human* escape hatches, not
-agent steps:
-
-- **AJAX discovery** is done by the built-in `crawl_ajax.py` (Playwright, from-the-start state walk). For an
-  even more exhaustive automated state graph you can run **[Crawljax](https://github.com/crawljax/crawljax)**
-  (Apache‑2.0, JVM) offline and fold its states into `viewgraph.json` via `crawl_ajax.py --merge` — it's an
-  optional booster (a stale, heavy JVM tool), not required.
-- **Pixel diffing** uses `pixelmatch`. If the diff step ever bottlenecks at huge scale (1000+ snapshots),
-  **[odiff](https://github.com/dmtrKovalenko/odiff)** is ~8× faster and could swap into `pixel_diff.js`.
-- **JSP parsing** is pragmatic (regex/heuristic, stdlib). For bespoke taglibs a heavier ANTLR AST + codemod
-  pipeline could be added later; deliberately deferred to keep the analyzer dependency-free.
+Reuses the pod's existing skills: `webapp-snapshot` (login via `save_auth_state.py`), `webapp-testing` (Playwright),
+`digimem` (team memory). Pulls MIT open‑source packages, installed manually (SETUP.md): **pixelmatch** + **pngjs**
+(pixel diff), **MSW** (record‑mode HAR replay), **Vite/React/TypeScript** (scaffold). The Python extractors
+(`extract_jsp`, `extract_theme`, `extract_backend`, …) and the Spring Boot scaffolder are stdlib‑only. The Spring
+Boot target uses Spring's `SimpleJdbcCall`/`JdbcTemplate` against the legacy DB.
 
 ## Out of scope (so omissions aren't mistaken for gaps)
 
-Back‑end/Spring modernization; responsive/mobile breakpoints (legacy is fixed‑viewport); accessibility
-remediation; animation modeling; CI wiring. The replica targets the legacy desktop viewport at parity.
+The **business‑logic translation** itself (the agent ports the legacy service/builder semantics — not auto‑generated);
+mainframe/COBOL/BMS (delegated to the pod's separate `cics-analysis` agent); responsive/mobile; accessibility
+remediation; animation modeling; CI wiring. The replica targets the legacy desktop viewport at parity. *(Backend
+modernization is now IN scope in full mode — it was out of scope in v2.)*

@@ -1,25 +1,27 @@
-# SETUP — standing up jsp2react on the pod (by hand)
+# SETUP — standing up the modernization toolkit on the pod (by hand)
 
-Fastest path: clone the repo and run **one command**. The rest of this file explains what that command
-does and how to run your first screen. Later, DigitCode (`dc agent install jsp2react`) replaces it.
+Fastest path: clone the repo and run **one command**, choosing a mode. The rest of this file explains what
+that does and how to run your first flow. Later, DigitCode (`dc agent install modernize-flow`) replaces it.
 
 ```bash
 git clone https://github.com/ap05-epic/jsp2react.git
 cd jsp2react
-bash install.sh
+bash install.sh full        # React + Spring Boot   (agent: modernize-flow)
+# or
+bash install.sh frontend    # React only — fallback (agent: jsp2react)
 ```
 
 ## 1. File tree
 
 ```
 jsp2react/
-├── install.sh                    # one-command setup (placement + deps + checks)
+├── install.sh                    # clean install, MODE = full | frontend
 ├── README.md
 ├── SETUP.md
 ├── docs/HOW-IT-WORKS.md
 ├── agents/
-│   ├── jsp2react-analyzer.agent.md
-│   └── jsp2react-builder.agent.md
+│   ├── modernize-flow.agent.md   # FULL: React + Spring Boot
+│   └── jsp2react.agent.md        # FRONTEND fallback: React only
 ├── skills/
 │   ├── legacy-crawl-capture/
 │   │   ├── SKILL.md
@@ -27,223 +29,205 @@ jsp2react/
 │   │   └── references/{jsp-source-extraction.md, ajax-crawl-and-viewgraph.md,
 │   │                   struts-jsp-endpoint-mapping.md, runtime-readiness-and-auth.md}
 │   ├── parity-verify/
-│   │   ├── SKILL.md
-│   │   ├── package.json          # declares pixelmatch + pngjs (install.sh runs `npm install` here)
+│   │   ├── SKILL.md · package.json   # pixelmatch + pngjs (install.sh runs `npm install` here)
 │   │   ├── scripts/{verify_screen.py, dom_diff.py, pixel_diff.js}
 │   │   └── references/parity-thresholds.md
-│   └── react-replica-kit/
+│   ├── react-replica-kit/
+│   │   ├── SKILL.md
+│   │   ├── scripts/{extract_theme.py, scaffold_app.sh, build_index.py, serve_review.py}
+│   │   └── references/{jsp-to-react-mapping.md, css-porting.md, theme-extraction.md, backend-data-modes.md}
+│   └── springboot-target-kit/        # FULL mode only
 │       ├── SKILL.md
-│       ├── scripts/{extract_theme.py, scaffold_app.sh, build_index.py, serve_review.py}
-│       └── references/{jsp-to-react-mapping.md, css-porting.md, theme-extraction.md, backend-data-modes.md}
-└── templates/{STATUS.md, spec.md, MANIFEST.json, capture-profile.json}
+│       ├── scripts/{extract_backend.py, scaffold_backend.py, verify_contract.py}
+│       └── references/{backend-layering.md, stored-procedure-mapping.md, session-auth-state.md}
+├── templates/{status.md, spec.md, MANIFEST.json, capture-profile.json, project.json}
+└── examples/baa.project.json
 ```
 
-## 2. What `install.sh` does (and the manual equivalent)
+## 2. What `install.sh <mode>` does
 
-`bash install.sh` performs exactly these steps — run them by hand only if you want to:
+A **clean install**: it removes this toolkit's managed skills + agents (and the retired v2 `jsp2react-analyzer`/
+`jsp2react-builder`) from the target dirs, then installs exactly the chosen mode's set — so the pod never runs
+stale files. It only touches files this toolkit owns (by name); your other `~/.copilot` skills/agents are safe.
 
-| Step | Command it runs | Destination |
+| Step | full | frontend |
 |---|---|---|
-| place skills | `cp -r skills/* ~/.copilot/skills/` | `~/.copilot/skills/{legacy-crawl-capture,parity-verify,react-replica-kit}` |
-| place agents | `cp agents/*.agent.md ~/.copilot/agents/` | `~/.copilot/agents/` (same place DigitCode/Copilot read agents) |
-| pixel deps | `cd ~/.copilot/skills/parity-verify && npm install` | installs pixelmatch+pngjs (from `package.json`) so `pixel_diff.js` resolves them |
-| checks | verifies Node, Python 3, Playwright are present | warns if anything's missing |
+| skills → `~/.copilot/skills/` | legacy-crawl-capture, react-replica-kit, parity-verify, **springboot-target-kit** | the first three |
+| agent → `~/.copilot/agents/` | `modernize-flow.agent.md` | `jsp2react.agent.md` |
+| pixel deps | `npm install` in `parity-verify` (pixelmatch+pngjs) | same |
+| checks | Node, Python 3 + Playwright, **JDK + Maven/Gradle** | Node, Python 3 + Playwright |
 
-Override the targets if your pod differs: `COPILOT_SKILLS_DIR=… COPILOT_AGENTS_DIR=… bash install.sh`.
-Templates are blueprints the **analyzer** copies and fills on its own — you don't edit them by hand (§5).
+Override targets: `COPILOT_SKILLS_DIR=… COPILOT_AGENTS_DIR=… bash install.sh <mode>`. Templates are blueprints
+the driver agent copies and fills itself — you don't edit them by hand (§5).
 
-> Paths aren't hardcoded anywhere — the scripts resolve everything from `STATUS.md §2` at run time.
+> **Revert / fallback:** v2 (frontend‑only) is tagged `v2.0-frontend-only` + branch `v2-backup`. Restore with
+> `git reset --hard v2.0-frontend-only`, or just `bash install.sh frontend` for the functional fallback.
 
 ## 3. Prerequisites already on the pod (verify, don't install)
 
 - **Python 3** with **Playwright** (`webapp-testing` uses it). If missing: `pip install playwright && playwright install chromium`.
-- **Node 18+ / npm** (for the React app, Vite, and `pixel_diff.js`).
-- Skills present: `webapp-snapshot`, `webapp-testing`, `digimem` (and optionally `playwright-cli`).
+- **Node 18+ / npm** (React app, Vite, `pixel_diff.js`).
+- **FULL mode:** a **JDK 17+** and **Maven/Gradle** (or the target project's `./mvnw`) for the Spring Boot target,
+  and a JDBC `DataSource` to the legacy DB.
+- Skills present: `webapp-snapshot`, `webapp-testing`, `digimem` (optionally `playwright-cli`).
 
 ## 4. Open‑source dependencies to pull (manual, pinned)
-
-All MIT. The pod can pull these from GitHub/npm; here is exactly what and from where.
 
 | Package | Source | Install | Used by |
 |---|---|---|---|
 | `pixelmatch` | github.com/mapbox/pixelmatch | `npm i -D pixelmatch@^5.3.0` | `parity-verify/scripts/pixel_diff.js` |
 | `pngjs` | github.com/lukeapage/pngjs | `npm i -D pngjs@^7.0.0` | `parity-verify/scripts/pixel_diff.js` |
-| `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (record-mode HAR replay) |
-| Vite + React + TS | github.com/vitejs/vite | `npm create vite@latest <app> -- --template react-ts` | `react-replica-kit/scripts/scaffold_app.sh` (runs this for you) |
-| **Crawljax** (OPTIONAL) | github.com/crawljax/crawljax (Apache-2.0) | download the jar/CLI; run separately | exhaustive AJAX state-graph discovery, normalized into `viewgraph.json` (see ajax-crawl-and-viewgraph.md). The built-in `crawl_ajax.py` already covers this — Crawljax is a booster, not required. |
+| `msw` | github.com/mswjs/msw | `npm i -D msw@^2.0.0` | `react-replica-kit` (record‑mode HAR replay) |
+| Vite + React + TS | github.com/vitejs/vite | `npm create vite@latest <app> -- --template react-ts` | `scaffold_app.sh` (runs this for you) |
+| Spring Boot + `spring-jdbc` | start.spring.io | in the target backend's `pom.xml`/`build.gradle` | `springboot-target-kit` (gateway uses `SimpleJdbcCall`) |
+| **Crawljax** (OPTIONAL) | github.com/crawljax/crawljax (Apache‑2.0) | download jar/CLI; run separately | exhaustive AJAX state‑graph, normalized into `viewgraph.json`. `crawl_ajax.py` already covers this — a booster, not required. |
 
-> `extract_jsp.py`, `extract_theme.py`, `crawl_ajax.py`, `build_index.py` are **stdlib Python** (Playwright
-> for the crawler, already on the pod) — no extra installs. `css-tree` is an OPTIONAL upgrade for theme
-> extraction; the stdlib harvester is the default and needs nothing.
+> All the Python extractors (`extract_jsp`, `extract_theme`, `extract_backend`, …), `scaffold_backend.py`, and
+> `build_index.py` are **stdlib Python** — no extra installs. `scaffold_app.sh` installs Vite/React/TS + `msw` +
+> `pixelmatch`/`pngjs` into the React app for you; `install.sh` installs the pixel libs into `parity-verify`.
 
-### Nothing ships in the repo — `node_modules` is git‑ignored. Install on the pod:
-
-**Automatic (you don't do these by hand):** `scaffold_app.sh` installs **Vite + React + TS, `msw`,
-`pixelmatch`, and `pngjs` into the React app** and runs `npx msw init public/`. So scaffolding the app
-covers all four packages for the app itself.
-
-**The parity skill's pixel libs — `install.sh` already did this.** `pixel_diff.js` lives in the
-`parity-verify` skill (a different folder than the React app), and Node resolves a script's `require()`
-from its own folder upward — not from the React app. The skill ships a `package.json`, and `install.sh`
-runs `npm install` there for you. If you skipped `install.sh`, do it once by hand:
+Verify the engines:
 ```bash
-cd ~/.copilot/skills/parity-verify && npm install      # reads package.json -> pixelmatch + pngjs
+node   ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check        # {"self_check":"ok","identical_diff_pixels":0}
+python ~/.copilot/skills/springboot-target-kit/scripts/extract_backend.py --self-check   # FULL mode
 ```
-Verify: `node ~/.copilot/skills/parity-verify/scripts/pixel_diff.js --self-check` → expects
-`{"self_check":"ok","identical_diff_pixels":0}`.
 
-**Not npm (must already be on the pod):** Node.js + npm; and **Python 3 + Playwright** for capture
-(`pip install playwright && playwright install chromium`). The Python scripts use the standard library only.
+## 5. Configuration — `project.json` + the agent fills `status.md`
 
-Notes:
-- `pixel_diff.js` works with pixelmatch v5 (CommonJS) **and** v6/v7 (ESM) — its loader tries `require`
-  then dynamic `import`; v5.3.0 is the simplest pin.
-- Alternative to the manual step: run `verify_screen.py --pixel-diff <app>/node_modules/.../pixel_diff.js`
-  or set `NODE_PATH` to the app's `node_modules`. The skill‑local install above is simplest.
+Two config surfaces, neither hand-filled screen-by-screen:
+- **`project.json`** (machine config every script reads via `--project`) — the app-specific values: context root,
+  `legacyBaseUrl`, `loginAction` + `loginFields`, `families`/`pathConventions`, `viewport`, `ports`, and (FULL)
+  `db.sqlmapDir`. Copy `templates/project.json`, fill it (or start from `examples/baa.project.json`). This is what
+  makes the toolkit **generic** — no app name is hardcoded in the scripts.
+- **`status.md`** — the driver agent **creates and seeds it** on its first run; you do not hand-fill it. The only
+  things a human supplies in the kickoff prompt are the **legacy URL**, **how to log in**, and the **`project.json`
+  path** (source root + target paths optional — the agent discovers/defaults them). Edit `status.md` afterward only
+  to override a default or scope the run.
 
-## 5. Configuration — the analyzer fills `STATUS.md`, not you
+## 6. First‑run smoke test — OPTIONAL manual wiring check (one flow, by hand)
 
-This is autonomous: **you do not hand-fill STATUS.md.** The **analyzer agent creates and seeds it** on its
-first run (kickoff prompt + repo discovery + defaults). The only things a human supplies — once, in the
-kickoff prompt — are:
-
-- **Legacy app URL** — the entry point; can't be guessed.
-- **Login** — how to authenticate: point at the login skill / where credentials or `auth_state.json` live
-  (the analyzer *invokes* login, it doesn't implement it). A one-time SSO step may be needed (a pre-step).
-- *(optional)* the legacy **source root** and **target app path** — omit them and the analyzer discovers
-  the source and defaults the target (`<work>/jsp2react-ui`).
-
-Everything else in §1–§3 (webapp dir, struts-config, bundles, viewport `1920x1080`, evidence root, tool
-paths, digimem domain) is discovered or defaulted. Edit STATUS.md afterward only to **override** a default
-(e.g. a per-screen pixel threshold) or to scope the run. → Normal operation is just the prompts in §6b.
-
-## 6. First‑run smoke test — OPTIONAL manual wiring check (one screen, run by hand)
-
-This proves the pipeline works on the pod *before* you trust the agents with a full sweep. It's a manual
-operator check using the scripts directly; the **autonomous run is §6b** (you just give the analyzer the
-URL). Skip to §6b if you'd rather let Copilot do it.
+Proves the pipeline works on the pod *before* you trust the agent with a full sweep. The autonomous run is §6b.
 
 ```bash
-S=~/.copilot/skills
+S=~/.copilot/skills ; P=work/project.json     # your filled project.json (from examples/baa.project.json)
 # 0. sanity: every script answers --self-check without a browser
-python $S/legacy-crawl-capture/scripts/extract_jsp.py --self-check
-python $S/legacy-crawl-capture/scripts/crawl_ajax.py --self-check
-python $S/legacy-crawl-capture/scripts/crawl_screens.py --self-check
-python $S/legacy-crawl-capture/scripts/capture_screen.py --self-check
-python $S/react-replica-kit/scripts/extract_theme.py --self-check
-python $S/react-replica-kit/scripts/build_index.py --self-check
-python $S/parity-verify/scripts/dom_diff.py --self-check
-node   $S/parity-verify/scripts/pixel_diff.js --self-check          # needs pixelmatch+pngjs
+for f in legacy-crawl-capture/scripts/extract_jsp legacy-crawl-capture/scripts/crawl_ajax \
+         legacy-crawl-capture/scripts/crawl_screens legacy-crawl-capture/scripts/capture_screen \
+         react-replica-kit/scripts/extract_theme react-replica-kit/scripts/build_index \
+         parity-verify/scripts/dom_diff springboot-target-kit/scripts/extract_backend \
+         springboot-target-kit/scripts/scaffold_backend springboot-target-kit/scripts/verify_contract ; do
+  python $S/$f.py --self-check ; done
+node $S/parity-verify/scripts/pixel_diff.js --self-check
 
-# 1. login once (login skill — the session everything reuses)
+# 1. login once (the session everything reuses)
 python $S/webapp-snapshot/scripts/save_auth_state.py --url <login-url> --output work/auth_state.json
 
-# 2. EXTRACT THE THEME from the legacy CSS source (colors/fonts come from here)
-python $S/react-replica-kit/scripts/extract_theme.py \
-  --css-dir <webapp>/theme --css-dir <webapp>/platform/styleSheets --out-dir work/evidence/theme
+# 2. THEME from the legacy CSS source (colors/fonts come from here)
+python $S/react-replica-kit/scripts/extract_theme.py --css-dir <webapp>/theme --out-dir work/evidence/theme
 
-# 3. DISCOVER views: static + AJAX (from the start), reconciled into one viewgraph
-python $S/legacy-crawl-capture/scripts/crawl_screens.py --struts-config <…>/WEB-INF/struts-config.xml \
-  --webapp-dir <webapp> --out work/screens.json --emit-viewgraph work/static-viewgraph.json
-python $S/legacy-crawl-capture/scripts/crawl_ajax.py --start-url <post-login summary> \
+# 3. DISCOVER views: static + AJAX (from the start) -> one viewgraph  (--project for the app taxonomy + login markers)
+python $S/legacy-crawl-capture/scripts/crawl_screens.py --struts-config <…>/struts-config.xml \
+  --webapp-dir <webapp> --project $P --out work/screens.json --emit-viewgraph work/static-viewgraph.json
+python $S/legacy-crawl-capture/scripts/crawl_ajax.py --start-url <post-login start> --project $P \
   --auth-state work/auth_state.json --merge work/static-viewgraph.json --out work/evidence/viewgraph.json
 
-# 4. PARSE one view's JSP into its source model (the BUILD INPUT)
-python $S/legacy-crawl-capture/scripts/extract_jsp.py --jsp <webapp>/jsp/fateamprofile.jsp \
-  --webapp-dir <webapp> --out work/evidence/f010_default/source-model.json
+# 4. PARSE one flow's JSP -> source-model.json (UI build input)
+python $S/legacy-crawl-capture/scripts/extract_jsp.py --jsp <webapp>/jsp/<flow>.jsp \
+  --webapp-dir <webapp> --out work/evidence/<flow>_default/source-model.json
 
 # 5. CAPTURE that view (real responses via --record-har; error pages auto-quarantine to _rejected/)
-python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/f010_default.json \
-  --url <screen-url> --out-dir work/evidence/f010_default --name legacy --auth-state work/auth_state.json --record-har
-#   (profile.workflow = the from-start click-path from viewgraph; readiness: waitFor/mustContain/waitForGone.)
-#   Check work/evidence/f010_default/legacy.capture.json -> "usable": true. Runbook: references/runtime-readiness-and-auth.md
+python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
+  --out-dir work/evidence/<flow>_default --name legacy --auth-state work/auth_state.json --project $P --record-har
+#   -> check work/evidence/<flow>_default/legacy.capture.json has "usable": true (not an error page)
 
-# 6. REAL data (record mode) + scaffold the app WITH the theme
+# 6. FRONTEND: real data (record) + scaffold the app with the theme + project defaults
 python $S/legacy-crawl-capture/scripts/capture_fixtures.py \
-  --har work/evidence/f010_default/legacy.har --out <app>/src/mocks/f010_default
-bash $S/react-replica-kit/scripts/scaffold_app.sh <app> work/evidence/theme/theme.css   # once
+  --har work/evidence/<flow>_default/legacy.har --out <app>/src/mocks/<flow>_default
+bash $S/react-replica-kit/scripts/scaffold_app.sh <app> work/evidence/theme/theme.css $P    # once
 
-# 7. (builder builds src/screens/F010 FROM source-model.json + theme tokens, runs `npm run dev`,
-#     then captures the react side with the SAME profile — only the URL changes)
-python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/f010_default.json \
-  --url http://localhost:5173/#/f010_default --out-dir work/evidence/f010_default --name react \
-  --wait-for "#root" --wait-for-gone ""     # adapt only mechanical selectors; keep viewport+mustContain
+# 7. (agent builds src/screens/<Flow> FROM source-model + theme, runs npm run dev, captures react with the SAME profile)
+python $S/legacy-crawl-capture/scripts/capture_screen.py --profile work/profiles/<flow>_default.json \
+  --url http://localhost:5173/#/<flow>_default --out-dir work/evidence/<flow>_default --name react
 
-# 8. PROVE parity (record = exact pixels; live = structure/style+data)
+# 8. PROVE frontend parity (record = exact pixels; live = structure/style+data)
 python $S/parity-verify/scripts/verify_screen.py \
-  --legacy-model work/evidence/f010_default/legacy.model.json --legacy-png work/evidence/f010_default/legacy.png \
-  --react-model  work/evidence/f010_default/react.model.json  --react-png  work/evidence/f010_default/react.png \
-  --out-dir work/evidence/f010_default/parity --name f010_default --data-mode record --pixel-threshold 0.005
-# exit 0 = PASS. Read .../parity/f010_default.parity-report.md for concrete deltas if it FAILS.
+  --legacy-model work/evidence/<flow>_default/legacy.model.json --legacy-png work/evidence/<flow>_default/legacy.png \
+  --react-model  work/evidence/<flow>_default/react.model.json  --react-png  work/evidence/<flow>_default/react.png \
+  --out-dir work/evidence/<flow>_default/parity --name <flow>_default --data-mode record --pixel-threshold 0.005
 
-# 9. INDEX + review (the navigable human entry point)
-python $S/react-replica-kit/scripts/build_index.py --manifest work/evidence/MANIFEST.json   # -> work/evidence/INDEX.html
+# 8b. FULL MODE — backend: trace the data layer, scaffold Spring Boot, verify the endpoint vs the legacy HAR
+python $S/springboot-target-kit/scripts/extract_backend.py --action <src>/.../<Flow>Action.java \
+  --source-dir <java-root> --project $P --out work/evidence/<flow>_default/backend-model.json
+python $S/springboot-target-kit/scripts/scaffold_backend.py \
+  --model work/evidence/<flow>_default/backend-model.json --out-dir <api>/src/main/java --package com.example.app
+#   (agent fills the ServiceImpl business logic + result-set->DTO mapping + session binding, then runs the app)
+curl -s 'http://localhost:8081/api/<flow>' > work/new_<flow>.json
+python $S/springboot-target-kit/scripts/verify_contract.py --har work/evidence/<flow>_default/legacy.har \
+  --endpoint-json work/new_<flow>.json --match /api/<flow> --data-mode record    # exit 0 = PASS
+
+# 9. INDEX + review
+python $S/react-replica-kit/scripts/build_index.py --manifest work/evidence/MANIFEST.json   # -> INDEX.html
 python $S/react-replica-kit/scripts/serve_review.py --work-dir work/evidence --react-base-url http://localhost:5173
 ```
 
-## 6b. What to type into Copilot (after the files are placed)
+## 6b. What to type into Copilot (after `install.sh <mode>`)
 
-Copilot auto-discovers the skills; you invoke the agents the same way you invoke your existing `baa-*`
-agents (by name / trigger phrase). Suggested prompts:
+Copilot auto-discovers the skills; invoke the agent by name. Use **`modernize-flow`** (full) or **`jsp2react`**
+(frontend) — match the mode you installed.
 
-**Step A — sanity check the install (no crawling):**
-> "Read jsp2react/SETUP.md and README.md. Confirm the three skills are under ~/.copilot/skills and both
-> jsp2react agents are discoverable, then run the §6 self-checks (`--self-check` / `--help`) and report
-> results. Don't crawl anything yet."
+**Step A — sanity check (no crawling):**
+> "Read jsp2react/SETUP.md and README.md. Confirm the skills are under ~/.copilot/skills and the **<modernize-flow |
+> jsp2react>** agent is discoverable, then run the §6 self‑checks (`--self-check`) and report results. Don't crawl yet."
 
-**Step B — analyze (run once; builds the SOURCE-DRIVEN contract for ALL views). You give only the URL + login:**
-> "Use the **jsp2react-analyzer** agent. Legacy app URL = `<…>`. Log in via
-> webapp-snapshot/save_auth_state.py (creds/auth_state at `<…>`). The legacy source is at `<…>` *(omit to
-> let it discover the source)*. **Bootstrap STATUS.md yourself**, then: run pre-capture triage; **extract the
-> theme** from the legacy CSS (extract_theme.py); **discover every view including AJAX views** (crawl_screens
-> --emit-viewgraph + crawl_ajax from the start → viewgraph.json — never open deep links directly); for each
-> view **parse its JSP into source-model.json** (extract_jsp.py), capture evidence + the **REAL responses**
-> (capture_screen --record-har; error pages auto-quarantine — look around again, don't accept them), and for
-> record-mode views build replay handlers from the HAR. Write spec.md (source models + capture contracts) +
-> STATUS.md + MANIFEST.json, then build_index → evidence/INDEX.html. Begin with the shell + one family, then
-> continue across all families until the coverage matrix is met."
+**Step B — analyze (run once; builds the source‑driven contract for ALL flows). You give URL + login + project.json:**
+> "Use the **<modernize-flow | jsp2react>** agent. Legacy URL = `<…>`. Log in via webapp-snapshot/save_auth_state.py
+> (creds/auth_state at `<…>`). project.json = `<…>` (copied from examples/baa.project.json). Legacy source at `<…>`
+> *(omit to discover)*. **Bootstrap status.md yourself**, then: run pre‑capture triage; **extract the theme**;
+> **discover every view including AJAX** (crawl_screens --emit-viewgraph + crawl_ajax from the start → viewgraph.json
+> — never open deep links directly); for each flow **parse its JSP → source-model.json**, capture evidence + the
+> **REAL responses** (--record-har; error pages auto‑quarantine — look around again)**, and (FULL mode) **trace the
+> data layer → backend-model.json** (extract_backend). Write spec.md + status.md + MANIFEST.json, then build_index →
+> evidence/INDEX.html. Begin with the login flow + one flow, then continue across all flows."
 
-That's the whole human input: the **URL** and **how to log in** (source path optional). The analyzer
-discovers/derives everything else into STATUS.md — you never hand-edit it.
+**Step C — implement (run repeatedly; one control/slice per turn):**
+> "Use the **<modernize-flow | jsp2react>** agent. Read status.md and implement the next slice end to end: build it
+> 1:1 **from its source-model.json + theme tokens** (structure/labels/colors from source, screenshot only to verify);
+> **(FULL) scaffold the Spring Boot endpoint from backend-model.json and fill the ServiceImpl with the legacy business
+> logic + session binding**; wire **real data** for its data mode (record = HAR replay / live = proxy / api = the new
+> endpoint); render + capture with the same profile; run parity-verify --data-mode (**and verify_contract vs the HAR,
+> FULL**) and fix from the report until it PASSES; then update status.md + regenerate INDEX.html. Build the login
+> flow first. Do one slice, then show me its parity report (+ contract report) and side‑by‑side."
 
-**Step C — build (run repeatedly; one view per turn):**
-> "Use the **jsp2react-builder** agent. Read STATUS.md and implement the next view end to end: build it 1:1
-> **from its source-model.json + the theme tokens** (structure/labels/colors from source, screenshot only to
-> verify), wire **real data** for its data_mode (record = HAR replay / live = Vite proxy), render it, capture
-> with the same profile, run parity-verify --data-mode, and fix from the parity report until it PASSES; then
-> update STATUS.md and regenerate INDEX.html. Build the Login screen (F000) first. Do one view, then show me
-> its parity-report.md and side-by-side.png."
-
-Then simply: **"Continue with the next screen."** (repeat) — or, once you trust it,
-**"Implement all remaining screens, verifying each before moving on; stop and tell me about any blocker."**
+Then: **"Continue with the next slice."** (repeat) — or, once you trust it,
+**"Implement all remaining slices, verifying each before moving on; stop and tell me about any blocker."**
 
 **Review:**
-> "Run react-replica-kit/scripts/serve_review.py against the work dir and the running React app so I can
-> review legacy vs React side by side."
+> "Run react-replica-kit/scripts/serve_review.py against the work dir and the running React app so I can review
+> legacy vs React side by side."
 
 ## 7. Assumptions to verify on the pod (correct as needed)
 
-1. `~/.copilot/skills/` is the skills dir and your Copilot agents dir is where `baa-*` live. Adjust paths in
-   `STATUS.md §2` if not.
-2. The legacy source (incl. `struts-config*.xml`, `.properties`) is readable; set its path in `STATUS.md`.
-3. Login can yield a reusable `auth_state.json` (one manual SSO step may be needed — it's a pre‑step, not
-   part of the agent loop).
-4. Data is REAL in both modes: **record** replays the responses recorded to HAR at capture time (no live
-   backend needed to render); **live** proxies the real backend (needs it running + a session). Never
-   hand-author data. Use `cics-analysis` for COMMAREA/DB2 contracts only if that source is in scope.
-5. Pixel‑exact JSP↔React isn't realistic; the gate is **strict structural + data-presence + (record) pixel /
-   (live) style**. Tune `--pixel-threshold` per view in `STATUS.md §3` (parity-thresholds.md); never relax
-   the structural gate. `--data-mode` selects record (exact pixels) vs live (pixels advisory).
-6. Script CLIs here are the contract; if a reused pod skill's flags differ (OCR drift), run it with
-   `--help` and adjust — the agents are told to do this.
+1. `~/.copilot/skills/` is the skills dir and your Copilot agents dir is where your other agents live. Override with
+   `COPILOT_SKILLS_DIR` / `COPILOT_AGENTS_DIR` if not.
+2. `project.json` is filled (context root, login, families, and FULL: `db.sqlmapDir`). Legacy source (incl.
+   `struts-config*.xml`, `.properties`, and FULL: the Java/DAO + sqlmaps) is readable.
+3. Login yields a reusable `auth_state.json` (one manual SSO step may be needed — a pre‑step, not the agent loop).
+4. Data is REAL in every mode: **record** replays the HAR; **live** proxies the real backend; **api** (FULL) is the
+   new endpoint, checked against the HAR. Never hand‑author data. Use `cics-analysis` for COMMAREA/DB2 contracts only
+   if that source is in scope.
+5. Pixel‑exact JSP↔React isn't realistic; the frontend gate is **strict structural + data‑presence + (record) pixel /
+   (live) style** (`--pixel-threshold` per view; never relax the structural gate). The backend gate
+   (`verify_contract.py`) is **field/type/value vs the recorded HAR**.
+6. Script CLIs here are the contract; if a reused pod skill's flags differ (OCR drift), run `--help` and adjust.
 
 ## 8. If something fails
-- Script import/`--self-check` fails → missing Python/Playwright or Node deps (§3, §4).
-- Pixel ratio huge → almost always a capture mismatch (different viewport/data/fonts), not a real defect —
-  see `parity-thresholds.md` "Making the comparison fair".
-- Login redirects reappear mid‑run → session expired; re‑run step 1; note it in `STATUS.md §7`.
-- Crawl misses screens → check `screens.json.reconciliation`; add missing actions/JSPs as spec §4 entries.
-- Capture `usable:false`, or page looks unstyled / shows an error / is missing data → it "rendered" but
-  isn't real evidence. Almost always: a misleading direct `*.do` route (use the real login→dispatcher
-  flow), CSS/JS 404s (no live app base), or async data captured too early (raise readiness/settle). Full
-  runbook incl. localhost/non‑SSO + timing: `legacy-crawl-capture/references/runtime-readiness-and-auth.md`.
+- Script `--self-check` fails → missing Python/Playwright or Node deps (§3, §4).
+- Capture `usable:false` / unstyled / error / missing data → it "rendered" but isn't real evidence. Usually a
+  misleading direct `*.do` route (use the real login→dispatcher flow), CSS/JS 404s, or async data captured too early.
+  Runbook: `legacy-crawl-capture/references/runtime-readiness-and-auth.md`.
+- Pixel ratio huge → almost always a capture mismatch (viewport/data/fonts), not a real defect — `parity-thresholds.md`.
+- **FULL: `verify_contract` finds no JSON oracle** → the legacy screen renders HTML, not JSON. Record the grid's AJAX
+  XHR, or derive the expected JSON from the captured DOM model — see `springboot-target-kit/references/backend-layering.md`.
+- **FULL: endpoint returns wrong/empty data** → check the gateway is calling the same SP with the same session/entity
+  context the capture used; fix the result‑set→DTO mapping. `stored-procedure-mapping.md`.
+- Login redirects reappear mid‑run → session expired; re‑run login; note it in `status.md`.

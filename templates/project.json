@@ -1,0 +1,25 @@
+{
+  "_help": "Machine config read by the modernize-flow / jsp2react scripts via --project (with CLI/env fallbacks). Copy this, fill it for your app, and point scripts at it. status.md §Project Config mirrors these values for humans; this file is the one the scripts parse. Field docs: SETUP.md §5 and springboot-target-kit/SKILL.md. A worked example: examples/baa.project.json.",
+
+  "appName": "",
+  "contextRoot": "/app",
+  "legacyBaseUrl": "http://127.0.0.1:8080",
+  "legacySourceDir": "",
+
+  "loginAction": "",
+  "loginFields": { "user": "username", "password": "password" },
+
+  "families": "auto",
+  "pathConventions": {},
+
+  "viewport": "1920x1080",
+  "ports": { "react": 5173, "review": 8800, "backend": 8080 },
+  "idPrefixes": { "shared": "S", "screen": "F" },
+  "errorSignatures": [],
+  "proxyPaths": [],
+
+  "db": { "jdbcUrl": "", "schema": "", "sqlmapDir": "" },
+
+  "targetFrontendDir": "",
+  "targetBackendDir": ""
+}

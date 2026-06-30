@@ -26,19 +26,20 @@ probes each interactive element (link/button/tab/menuitem/hover-menu). A new DOM
 recorded with its **full from-start click-path** + the endpoint it triggered. Error-looking views are
 recorded but not expanded. `--merge` folds in the static states (and any normalized Crawljax output).
 
-Run it **per family/menu** with deliberate bounds; **log what you bounded** (no silent caps). Increase
+Run it **per family/menu** (families come from `project.families`, or are auto-inferred) with deliberate
+bounds; **log what you bounded** (no silent caps). Increase
 `--max-*`/`--settle-ms` for deep or slow families.
 
 ## `viewgraph.json` schema
 ```jsonc
 { "start_url":"…","count":N,"errors":M,"states":[
-  { "id":"v0007", "domSignature":"<sha1>", "isError":false, "label":"Compensation",
-    "clickPathFromStart":[ {"selector":"#faSearch","kind":"click","label":"Search"},
-                           {"selector":"a.tab[data-tab=comp]","kind":"click","label":"Compensation"} ],
-    "triggeredEndpoints":["GET https://…/BAA/fadetail.do?tab=comp"],
+  { "id":"v0007", "domSignature":"<sha1>", "isError":false, "label":"<View>",   // example: a "Compensation" tab
+    "clickPathFromStart":[ {"selector":"#search","kind":"click","label":"Search"},
+                           {"selector":"a.tab[data-tab=comp]","kind":"click","label":"<View>"} ],
+    "triggeredEndpoints":["GET https://…/<ctx>/<flow>.do?tab=comp"],
     "title":"…","url":"…" } ] }
 ```
-Each state becomes a STATUS.md row. Its `clickPathFromStart` becomes the capture profile's `workflow`
+Each state becomes a status.md row. Its `clickPathFromStart` becomes the capture profile's `workflow`
 (navigate/click/fill/select/wait) so capture and the React replay both reach it the same way.
 
 ## Crawljax (optional, OSS — exhaustive state-graph)

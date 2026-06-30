@@ -1,6 +1,6 @@
 {
   "_schema": {
-    "purpose": "A per-screen CAPTURE CONTRACT: how to deterministically reach and capture one legacy screen so the evidence is real (usable, not just 'rendered'). The analyzer writes one of these per screen; capture_screen.py reads it with --profile; the BUILDER reuses the SAME profile to capture the React side, guaranteeing comparable captures.",
+    "purpose": "A per-screen CAPTURE CONTRACT: how to deterministically reach and capture one legacy screen so the evidence is real (usable, not just 'rendered'). The driver agent writes one of these per screen; capture_screen.py reads it with --profile; the agent reuses the SAME profile to capture the React side, guaranteeing comparable captures.",
     "consumed_by_capture_screen": ["url", "viewport", "workflow", "waitFor", "mustContain", "waitForGone", "waitMs", "recordHar", "errorSignatures"],
     "documentation_only": ["id", "screen", "canonicalRoute", "authContext", "expectedAssets", "knownFailureModes", "notes", "dataMode"],
     "rules": [
@@ -8,70 +8,71 @@
       "Record the canonical route AND the misleading routes (e.g. a direct *.do that shows an error page).",
       "workflow may be an inline list of steps (navigate/click/fill/select/wait) OR a path to a steps JSON.",
       "Use the same profile (minus url) for the legacy and react captures.",
-      "recordHar:true records the REAL backend responses (responses.har) for record-mode replay (no fake data).",
-      "errorSignatures[] = text that marks a wrong/error page; a hit QUARANTINES the capture to _rejected/ instead of promoting it.",
-      "dataMode (record|live) tells the builder how this view's React side gets real data; capture itself ignores it."
+      "recordHar:true records the REAL backend responses (legacy.har) for record-mode replay (no fake data).",
+      "errorSignatures[] = text that marks a wrong/error page; a hit QUARANTINES the capture to _rejected/ instead of promoting it. The app's login route is added automatically from project.loginAction.",
+      "dataMode (record|live|api) tells the agent how this view's React side gets real data; capture itself ignores it.",
+      "Values below are GENERIC EXAMPLES — substitute the app's context root, routes, field names (from project.json), and feature labels."
     ]
   },
 
   "examples": [
     {
-      "id": "F000_login",
+      "id": "login_default",
       "screen": "Login page",
-      "canonicalRoute": "/BAA/jsp/login.jsp",
+      "canonicalRoute": "/<ctx>/jsp/login.jsp",
       "authContext": "pre-auth",
-      "url": "http://127.0.0.1:8080/BAA/jsp/login.jsp",
+      "url": "http://127.0.0.1:8080/<ctx>/jsp/login.jsp",
       "viewport": "1920x1080",
-      "waitFor": "form input[name='userId']",
-      "mustContain": ["Business Analysis"],
+      "waitFor": "form input[name='<userField>']",
+      "mustContain": ["<a heading on the login page>"],
       "waitForGone": null,
       "waitMs": 1000,
-      "expectedAssets": ["/BAA/platform/styleSheets/", "/BAA/theme/"],
+      "expectedAssets": ["/<ctx>/styleSheets/", "/<ctx>/theme/"],
       "knownFailureModes": ["none"],
-      "notes": "Static pre-auth page; minimal settle."
+      "notes": "Static pre-auth page; minimal settle. Field names come from project.loginFields."
     },
     {
-      "id": "F010_fasummary_ab10",
-      "screen": "FA Summary (AB10)",
-      "canonicalRoute": "dispatcherAction.do?page=fasummary&fanum=AB10&entityLevel=COM9999",
-      "authContext": "authenticated via the REAL login-form submit; FA context AB10. Reuse auth_state.json (--auth-state).",
-      "url": "http://127.0.0.1:8080/BAA/dispatcherAction.do?page=fasummary&fanum=AB10&entityLevel=COM9999",
+      "id": "summary_default",
+      "screen": "<Flow> Summary (example entity)",
+      "canonicalRoute": "dispatcherAction.do?page=summary&id=<entity>&level=<level>",
+      "authContext": "authenticated via the REAL login-form submit; entity context <entity>. Reuse auth_state.json (--auth-state).",
+      "url": "http://127.0.0.1:8080/<ctx>/dispatcherAction.do?page=summary&id=<entity>&level=<level>",
       "viewport": "1920x1080",
       "workflow": null,
-      "waitFor": "#pmenu",
-      "mustContain": ["Compensation", "FA Profile"],
+      "waitFor": "#mainmenu",
+      "mustContain": ["<a label that proves the real screen loaded>"],
       "waitForGone": ".loadingMask",
       "waitMs": 8000,
       "recordHar": true,
       "dataMode": "record",
-      "errorSignatures": ["HTTP Status 500", "session expired", "loginAction.do"],
-      "expectedAssets": ["/BAA/theme/", "/BAA/platform/styleSheets/"],
+      "errorSignatures": ["HTTP Status 500", "session expired"],
+      "expectedAssets": ["/<ctx>/theme/", "/<ctx>/styleSheets/"],
       "knownFailureModes": [
-        "Opening dispatcherAction.do WITHOUT a live logged-in session shows the login/error route, not the summary.",
-        "Direct loginAction.do is a MISLEADING target (standalone error page) — never use it as a verification route.",
-        "FA-detail widgets hydrate ~8s after first HTML; capturing too early yields missing backend data."
+        "Opening the dispatcher route WITHOUT a live logged-in session shows the login/error route, not the screen.",
+        "A direct login route is a MISLEADING target (standalone page) — never use it as a verification route (auto-added to errorSignatures from project.loginAction).",
+        "Data widgets may hydrate several seconds after the first HTML; capturing too early yields missing backend data."
       ],
-      "notes": "Reach by submitting the real login form first (or reuse auth_state.json), THEN this dispatcher route. ~5s baseline + ~8s for FA-detail widgets."
+      "notes": "Reach by submitting the real login form first (or reuse auth_state.json), THEN this dispatcher route. Tune the settle to the app's slowest widget (see runtime-readiness-and-auth.md)."
     },
     {
-      "id": "F001_login_then_summary",
-      "screen": "Post-login FA Summary (via real form submit)",
+      "id": "login_then_summary",
+      "screen": "Post-login Summary (via real form submit)",
       "canonicalRoute": "loginAction.do (as a FORM POST, not a direct GET) -> dispatcher summary",
       "authContext": "performs the real login, then lands on the authenticated summary",
-      "url": "http://127.0.0.1:8080/BAA/jsp/login.jsp",
+      "url": "http://127.0.0.1:8080/<ctx>/jsp/login.jsp",
       "viewport": "1920x1080",
       "workflow": [
-        {"action": "navigate", "url": "http://127.0.0.1:8080/BAA/jsp/login.jsp"},
-        {"action": "fill", "selector": "input[name='userId']", "value": "<from login.env>"},
-        {"action": "fill", "selector": "input[name='password']", "value": "<from login.env>"},
+        {"action": "navigate", "url": "http://127.0.0.1:8080/<ctx>/jsp/login.jsp"},
+        {"action": "fill", "selector": "input[name='<userField>']", "value": "<from a secrets file / env>"},
+        {"action": "fill", "selector": "input[name='<passField>']", "value": "<from a secrets file / env>"},
         {"action": "click", "selector": "button[type='submit'], input[type='submit']"},
-        {"action": "wait", "selector": "#pmenu", "timeout": 30000}
+        {"action": "wait", "selector": "#mainmenu", "timeout": 30000}
       ],
-      "waitFor": "#pmenu",
-      "mustContain": ["FA Profile"],
+      "waitFor": "#mainmenu",
+      "mustContain": ["<a post-login label>"],
       "waitForGone": ".loadingMask",
       "waitMs": 5000,
-      "knownFailureModes": ["The app may try to recover auth via platform/GCS paths that don't exist on localhost — see runtime-readiness-and-auth.md."],
+      "knownFailureModes": ["The app may try to recover auth via platform paths that don't exist on localhost — see runtime-readiness-and-auth.md."],
       "notes": "Use this when you must prove the real login navigation rather than reusing a saved session."
     }
   ]

@@ -1,13 +1,13 @@
 # Backend data modes — REAL data, never fakes
 
 The replica must render **real backend data**, not hand-authored fixtures. There are two modes; pick per
-view in STATUS.md (`data_mode: record | live`). Copilot can choose on the pod based on what works.
+view in status.md (`data_mode: record | live`). Copilot can choose on the pod based on what works.
 
 ## record mode — replay the REAL recorded responses (exact parity)
-At capture, the analyzer records the legacy view's ACTUAL responses to a HAR, then converts them to MSW
-replay handlers:
+At capture, the driver agent (analysis mode) records the legacy view's ACTUAL responses to a HAR, then
+converts them to MSW replay handlers:
 ```bash
-# 1) analyzer captured real responses:
+# 1) the agent captured the real responses:
 capture_screen.py --profile profiles/<id>.json --out-dir <evidence>/<id> --name legacy --record-har
 # 2) convert the REAL responses -> replay handlers (no hand-authored data):
 capture_fixtures.py --har <evidence>/<id>/legacy.har --out <app>/src/mocks/<id>
@@ -27,9 +27,15 @@ All fetches go through `src/api.ts` with `credentials:'include'`, so the **real 
 **real backend**. Live data drifts from the captured screenshot, so parity here gates on **structure +
 style + data-presence**, with pixels advisory (`verify_screen.py --data-mode live`).
 
+> **FULL mode — a generated backend.** record/live both target the *legacy* backend's responses. In FULL
+> (React + Spring Boot) modernization, the `springboot-target-kit` skill **generates a new Spring Boot
+> endpoint** (controller → service → `SimpleJdbcCall` gateway → DTO) and verifies its JSON against the same
+> recorded HAR; `live` mode can then point at that new `/api/<flow>` endpoint instead of the legacy `.do`.
+> See springboot-target-kit's `references/backend-layering.md` and `references/stored-procedure-mapping.md`.
+
 ## Auth / session (login is rebuilt)
-- Login is a real screen (F000), rebuilt 1:1 from its source model. It POSTs the real login action
-  (`VITE_LOGIN_ACTION`, default `/BAA/loginAction.do`) so a real session is established.
+- Login is a real screen (F000), rebuilt 1:1 from its source model. It POSTs the app's real login action
+  (`VITE_LOGIN_ACTION`, from `project.loginAction` — example: `/BAA/loginAction.do`) so a real session is established.
 - That session cookie then authenticates data calls in **both** modes (record replays responses captured
   under a valid session; live proxies with the cookie). The Vite proxy uses `cookieDomainRewrite:'localhost'`
   so the backend cookie sticks to the dev origin.

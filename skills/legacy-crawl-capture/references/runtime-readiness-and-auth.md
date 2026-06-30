@@ -17,7 +17,7 @@ in a real local run of the BAA app; the rules generalize to any legacy app this 
 
 Do not start capturing screens until the app is actually capture-ready. Confirm, in order:
 
-1. **Login page reachable** — e.g. `GET http://127.0.0.1:8080/BAA/jsp/login.jsp` returns 200 and the form.
+1. **Login page reachable** — e.g. `GET http://127.0.0.1:8080/<ctx>/jsp/login.jsp` returns 200 and the form.
 2. **Auth works end-to-end** — submitting the real login form lands on the authenticated app, and a
    reusable session can be saved (`save_auth_state.py` → `auth_state.json`).
 3. **The real post-login route is valid** — you can reach an authenticated dispatcher route *after*
@@ -28,8 +28,8 @@ Do not start capturing screens until the app is actually capture-ready. Confirm,
    confirm its backend-driven content appears (not just the page chrome).
 
 If any step fails, fix it (or document the blocker) **before** mass capture. A single bad runtime
-assumption multiplied across ~220 screens is the most expensive failure mode. This triage exists
-because the local BAA run was "reachable + login partially worked" yet deeper session continuity
+assumption multiplied across hundreds of screens is the most expensive failure mode. This triage exists
+because one real local run (BAA) was "reachable + login partially worked" yet deeper session continuity
 and styling were still broken — capturing then would have produced a folder of confident-wrong PNGs.
 
 **Triage checklist (the agent confirms all before capture begins):**
@@ -40,16 +40,16 @@ and styling were still broken — capturing then would have produced a folder of
 
 ## 2. "Page loaded" ≠ "screen usable" — semantic readiness
 
-`networkidle` alone is **not** sufficient for these apps. In BAA, Compensation / ranking / profile /
-practice-management / multi-product sections populate asynchronously *after* the first HTML and after
-network goes idle. Treat a page as captured only when its *meaning* is present.
+`networkidle` alone is **not** sufficient for these apps. In one real app (BAA), data-heavy sections
+(e.g. Compensation, ranking, profile, practice-management) populate asynchronously *after* the first HTML
+and after network goes idle. Treat a page as captured only when its *meaning* is present.
 
 `capture_screen.py` enforces readiness in this order (each step is optional per screen; configure via
 the capture profile — see §7):
 
 1. **wait for selector** — a structural anchor exists (`--wait-for "#pmenu"`).
 2. **wait for required text markers** — the real content is present
-   (`--must-contain "Compensation" --must-contain "FA Profile"`). This is the strongest signal that
+   (e.g. `--must-contain "Compensation"`). This is the strongest signal that
    backend data actually arrived, not just the shell.
 3. **wait for spinner/mask to disappear** — `--wait-for-gone ".loadingMask"`.
 4. **fonts settle** — `document.fonts.ready` (automatic).
@@ -64,13 +64,13 @@ flagged `usable: true` when **all configured readiness checks passed and no expe
 
 ---
 
-## 3. Timing rules (BAA-calibrated; tune per app)
+## 3. Timing rules (example calibration from BAA; tune per app)
 
 For data-heavy authenticated pages, after live navigation reaches `networkidle`:
 
 - **Normal authenticated pages:** wait **≥ ~5s** for backend sections to populate.
-- **FA-detail screens (AB10 and similar):** wait **~8s more** (≈13s total) — Compensation, ranking,
-  profile, practice-management, and multi-product sections settle late, and theme/fonts stabilize
+- **Deep detail screens (example: an `<entity>` like AB10):** wait **~8s more** (≈13s total) — the
+  data-heavy sections (e.g. Compensation, ranking, profile) settle late, and theme/fonts stabilize
   slightly after the initial HTML render.
 
 Encode these as `waitMs` in the per-screen capture profile, *on top of* the semantic readiness checks
@@ -84,20 +84,22 @@ the readiness selectors/text are what make the capture correct, the settle time 
 Record, per screen family, **how to legitimately reach the authenticated state** — and which routes
 *look* right but aren't:
 
-- **Misleading route (do NOT use as a verification target):** opening `/BAA/loginAction.do` directly
-  shows a **standalone error page**, not the logged-in UI. A direct GET of a `*.do` action that
+- **Misleading route (do NOT use as a verification target):** opening the app's login action directly
+  (e.g. `/<ctx>/loginAction.do`, from `project.loginAction`) shows a **standalone error page**, not the
+  logged-in UI. A direct GET of a `*.do` action that
   normally runs mid-session will route to login/error.
 - **Canonical authenticated route:** submit the **real login form**, let the app navigate into the
   authenticated flow, then verify the resulting **dispatcher** page. For deep links the stable shape is:
-  `dispatcherAction.do?page=<page>&fanum=<FA>&entityLevel=<level>`
-  e.g. `http://127.0.0.1:8080/BAA/dispatcherAction.do?page=fasummary&fanum=AB10&entityLevel=COM9999`
+  `dispatcherAction.do?page=<page>&fanum=<entity>&entityLevel=<level>`
+  e.g. `http://127.0.0.1:8080/<ctx>/dispatcherAction.do?page=<flow>&fanum=AB10&entityLevel=COM9999`
   This works **only with a live logged-in session** — reuse `auth_state.json` (`--auth-state`) or run
   the login workflow first (`--profile` with a `workflow`).
-- **Routes that only work after a workflow step** (a form submit, a quick-search for `AB10`) belong in
-  a reusable workflow JSON, not as a bare URL.
+- **Routes that only work after a workflow step** (a form submit, a quick-search for an entity like
+  `AB10`) belong in a reusable workflow JSON, not as a bare URL.
 
-The analyzer records the canonical route, the misleading routes, and any required workflow step in the
-screen's capture profile and in `spec.md`, so the builder never re-discovers this by trial and error.
+The driver agent (analysis mode) records the canonical route, the misleading routes, and any required
+workflow step in the screen's capture profile and in `spec.md`, so the implementation step never
+re-discovers this by trial and error.
 
 ---
 
@@ -112,29 +114,29 @@ are actually deeper session/route assumptions. Distinguish three failure classes
 | Logged in, but deep navigation 500s/redirects to error | **Session continuity** | login OK, then dispatcher route dies |
 | Page renders but looks like raw HTML | **Assets** | stylesheet/script URLs non-200 (see §6) |
 
-Specific localhost gotchas seen in BAA (and the source fixes that resolved them — for context when
-the blocker is runtime logic, not browser automation):
+Specific localhost gotchas seen in one real app (and the kind of source fix that resolved them — for
+context when the blocker is runtime logic, not browser automation):
 
-- The app tried to **recover auth through platform/GCS paths** that don't exist on local Tomcat,
-  turning a missing-platform-cookie into a fatal relogin. Fixed in `DispatcherAction.java` (local
-  explicit-login no longer forces fatal platform-GCS relogin when platform cookies are absent).
-- `BaseAction.checkUserInSession()` applied **localhost-only timeout/error** behavior from missing
-  platform GCS on `localhost`/`127.0.0.1`, blocking deep navigation (e.g. FA quick-search `AB10`).
+- The app tried to **recover auth through enterprise platform/SSO paths** that don't exist on local Tomcat,
+  turning a missing-platform-cookie into a fatal relogin. Fixed in the **main dispatcher action** (local
+  explicit-login no longer forces a fatal platform relogin when platform cookies are absent).
+- A **base-action session check** applied **localhost-only timeout/error** behavior from the missing
+  platform context on `localhost`/`127.0.0.1`, blocking deep navigation (e.g. a quick-search for an entity).
   Fixed by bypassing that check on localhost.
 
 You don't need these exact files — the point is: **session continuity failures after a successful
 login are usually platform/GCS assumptions, not credentials.** Look there before blaming login.
 
-Credentials for the local app live in the repo (e.g. `BAX-BusinessAnalysis/login.env`); reference
+Credentials for the local app live in the app repo (e.g. a `login.env`); reference
 them via env, never hard-code secrets into a profile.
 
 ---
 
 ## 6. Styled-vs-unstyled detection
 
-Several early BAA screenshots were wrong because saved HTML was rendered **without a live `/BAA/`
-base URL**, so relative CSS/JS didn't resolve — the page rendered as raw unstyled HTML. Always capture
-against the **live local app base**, never a detached `.html` file.
+Several early screenshots (on the BAA app) were wrong because saved HTML was rendered **without a live
+`/<ctx>/` base URL**, so relative CSS/JS didn't resolve — the page rendered as raw unstyled HTML. Always
+capture against the **live local app base**, never a detached `.html` file.
 
 `capture_screen.py` warns when a page probably didn't load correctly, using these signals:
 
@@ -148,17 +150,17 @@ fix the asset/base-URL problem and recapture.
 
 ---
 
-## 7. The per-screen capture contract (and why the builder reuses it)
+## 7. The per-screen capture contract (and why the agent reuses it)
 
 Everything above is captured, per screen, in a machine-readable **capture profile** (see
 `templates/capture-profile.json`). One profile records: canonical route, required auth context,
 viewport, readiness selectors/text, spinner-gone selector, settle timing, expected assets, and known
 failure modes.
 
-- The **analyzer** writes one profile per screen and stores it with the evidence.
+- The driver agent (**analysis mode**) writes one profile per screen and stores it with the evidence.
 - `capture_screen.py --profile <file>` consumes it to capture the **legacy** side.
-- The **builder** reuses the **same profile** (same viewport, readiness criteria, settle timing, key
-  content expectations) to capture the **React** side.
+- The driver agent (**implementation mode**) reuses the **same profile** (same viewport, readiness
+  criteria, settle timing, key content expectations) to capture the **React** side.
 
 Comparable captures are the precondition for a trustworthy parity diff: if legacy waited for
 `Compensation` text at 1920×1080 with an 8s settle, the React capture must do the identical thing.
@@ -169,11 +171,11 @@ This is how readiness becomes deterministic and reruns stop requiring manual re-
 ## 8. Source-backed debugging before declaring a blocker
 
 For local modernization, the blocker is often **app runtime logic**, not browser automation. Before
-marking a screen `blocked`, and when capture repeatedly fails for the same screen, the analyzer is
-permitted (and expected) to investigate the **app source** to explain the failure:
+marking a screen `blocked`, and when capture repeatedly fails for the same screen, the agent (analysis
+mode) is permitted (and expected) to investigate the **app source** to explain the failure:
 
-- inspect session/auth code (`BaseAction`, `DispatcherAction`, login filters);
-- identify localhost-only assumptions (platform/GCS cookie checks);
+- inspect session/auth code (the base action, the dispatcher action, login filters);
+- identify localhost-only assumptions (platform/SSO cookie checks);
 - trace a broken post-login route to the action that rejects it;
 - report precisely when a **runtime patch** is required vs. when it's a capture-config problem.
 
@@ -184,7 +186,7 @@ Declare `blocked` only after this source-backed pass, and record *what* in the r
 
 ## 9. Recovery from reset evidence
 
-If `STATUS.md` or the evidence folder is wiped, the essential capture knowledge is **not** lost: it
+If `status.md` or the evidence folder is wiped, the essential capture knowledge is **not** lost: it
 can be rebuilt from (a) source discovery (struts-config, JSP links), (b) this runbook, and (c) the
-saved capture profiles. The analyzer rebuilds STATUS.md and re-captures from those, rather than
+saved capture profiles. The agent rebuilds status.md and re-captures from those, rather than
 depending on prior-session chat notes.
