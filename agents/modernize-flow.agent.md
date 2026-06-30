@@ -56,8 +56,11 @@ Do this ONCE, then implement repeatedly. Order matters:
    `legacy-crawl-capture/scripts/init_project.py --url <legacy URL> --webapp-dir <webapp> --source-dir <java/resources
    root>` → a draft project.json (contextRoot, login action + fields, families, db.sqlmapDir auto-derived). Then
    **complete its `_todo` items** (confirm the login fields, families, `db.sqlmapDir`) and drop the `_discovered`/
-   `_todo` keys. Mirror the key values into `status.md` §Project Config. Set `mode: full`. The only human inputs are
-   the URL, how to log in, and the source path — everything else you derive.
+   `_todo` keys. **Creds for `--login`: YOU locate them** — search the repo for the app's gitignored creds file
+   (a `login.env`), set `project.json.credsFile` to its path (relative to project.json), and confirm its keys map to
+   `loginFields` (the tool matches `user`/`username`/`userId`, `password`/`pass` case-insensitively). If none exists,
+   ask the human to create one or export `LEGACY_USER`/`LEGACY_PASS`. Never commit creds. Mirror the key values into
+   `status.md` §Project Config. Set `mode: full`. The only human inputs are the URL, how to log in, and the source path.
 3. **Theme**: `extract_theme.py` → `evidence/theme/{tokens.json,theme.css}` (colors/fonts from source).
 4. **Discover every view**: `crawl_screens.py --emit-viewgraph` (static) + `crawl_ajax.py --merge` (AJAX, from the
    START — never open deep links directly) → `viewgraph.json`. Each view carries its full from-start click-path.

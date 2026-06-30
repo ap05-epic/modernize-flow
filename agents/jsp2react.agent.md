@@ -49,7 +49,9 @@ READ status.md
 2. **project.json — bootstrap it YOURSELF** (not the human): run `legacy-crawl-capture/scripts/init_project.py
    --url <legacy URL> --webapp-dir <webapp>` → a draft (contextRoot, login action + fields, families auto-derived);
    complete its `_todo` items, drop `_discovered`/`_todo`, mirror into `status.md` §Project Config; `mode: frontend`.
-   (db/sqlmap fields aren't needed in frontend mode.) Human inputs: only the URL + how to log in.
+   (db/sqlmap fields aren't needed in frontend mode.) **Creds for `--login`: YOU locate them** — find the app's
+   gitignored `login.env`, set `project.json.credsFile` to its path, confirm keys map to `loginFields` (else ask the
+   human / use `LEGACY_USER`+`LEGACY_PASS`). Never commit creds. Human inputs: only the URL + how to log in.
 3. **Theme**: `extract_theme.py` → `evidence/theme/{tokens.json,theme.css}`.
 4. **Discover every view**: `crawl_screens.py --emit-viewgraph` + `crawl_ajax.py --merge` → `viewgraph.json`
    (AJAX views from the START; never open deep links directly; each view carries its from-start click-path).
