@@ -14,10 +14,15 @@ The gate has two knobs. Tune them in status.md §3 and pass via `verify_screen.p
 
 ## The two gates
 
-1. **Structural (DOM lane) — strict, non-negotiable.** Target: **0 critical deltas.** Copy, labels,
-   field order, tab order, table columns, and validation/error text must match the legacy screen exactly.
-   There is no tolerance here; a critical delta is a real fidelity defect. Do not "raise the threshold" —
-   fix the React code.
+1. **Structural (DOM lane) — CONTENT is strict, non-negotiable.** Target: **0 critical deltas.** Copy,
+   labels, field order, tab order, data-table columns, and validation/error text must match the legacy
+   screen exactly. There is no tolerance here; a critical delta is a real fidelity defect. Do not "raise
+   the threshold" — fix the React code.
+   **Nesting deltas do not gate.** Same content, different markup grouping — one legacy text node
+   rendered as two React spans, or legacy's headerless nested layout-tables vs clean React markup — is
+   classified `nesting`: listed in the report (it explains pixel drift) but not a defect. Rebuilding
+   legacy table-soup markup to silence these would be anti-modernization. `--strict-nesting` gates them
+   if a screen ever truly needs identical markup shape.
 
 2. **Visual (pixel lane) — thresholded.** Target: **pixel mismatch ratio ≤ 0.005 (0.5%)** by default.
    Exact-to-the-pixel parity between a JSP/Dojo-rendered page and a React port is not realistic because
@@ -53,6 +58,7 @@ A high pixel ratio is usually a capture mismatch, not a fidelity problem:
 
 ## When a screen genuinely can't be pixel-exact
 
-Record it: keep the structural gate strict (it still proves the replica is *correct*), set a per-screen
+Record it: keep the content gate strict (it still proves the replica is *correct*), set a per-screen
 pixel threshold in status.md §3 with a one-line reason, and attach the `side-by-side.png` so a human can
-sign off the residual. Never relax the **structural** gate to make a screen pass.
+sign off the residual. Never relax the **content** gate to make a screen pass — nesting deltas are the
+only structural class that is advisory, and that's by design, not per-screen discretion.

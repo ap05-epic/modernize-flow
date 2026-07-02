@@ -7,9 +7,14 @@ CONCRETE, actionable delta list — the thing the builder fixes from. This is th
 it does NOT judge visual look (that's pixel_diff.js); it enforces that copy, labels, field/tab order,
 table columns, validation text, and the set of controls match EXACTLY.
 
-CRITICAL deltas (fail the gate): missing/extra control or text, text mismatch, label/name/type mismatch,
-table column missing/extra/reordered, field or tab order mismatch.
-ADVISORY deltas (do not fail; guide pixel fixes): per-element style value differences.
+Three severities:
+  CRITICAL — content differs: missing/extra control or text, text mismatch, label/name/type mismatch,
+             DATA-table column missing/extra/reordered, field or tab order mismatch. Fails the gate.
+  NESTING  — same content, different markup GROUPING: a text present on both sides but split/merged
+             across different elements, or legacy's headerless layout-table soup vs clean React layout.
+             Reported (it explains pixel drift) but does NOT fail the gate — clean React must not be
+             forced to reproduce 1998 nested-table markup. (verify_screen --strict-nesting gates it.)
+  ADVISORY — per-element style value differences; guide pixel fixes.
 
 Importable: build_diff(legacy_model, react_model) -> dict. Also a CLI.
 Stdlib only.
@@ -95,7 +100,7 @@ def diff_salient(legacy, react, deltas):
         if best is not None and best_ratio >= 0.5:
             used_ins.add(best)
             ik, ins_el = pending_ins[best]
-            deltas.append({"type": "text_mismatch", "severity": "critical",
+            deltas.append({"type": "text_mismatch", "severity": "critical", "kind": dk.split(":", 1)[0],
                            "legacy": dk.split(":", 1)[1], "react": ik.split(":", 1)[1],
                            "where": where(ins_el),
                            "hint": "Make the React text/label exactly match the legacy value."})
@@ -112,20 +117,57 @@ def diff_salient(legacy, react, deltas):
 
 
 def diff_tables(legacy, react, deltas):
-    lt, rt = legacy.get("tables", []), react.get("tables", [])
-    for idx in range(max(len(lt), len(rt))):
-        lh = lt[idx]["headers"] if idx < len(lt) else None
-        rh = rt[idx]["headers"] if idx < len(rt) else None
-        if lh is None:
-            deltas.append({"type": "extra_table", "severity": "critical", "legacy": None, "react": rh,
-                           "where": {"table_index": idx}, "hint": "Extra table in React; remove."}); continue
-        if rh is None:
-            deltas.append({"type": "missing_table", "severity": "critical", "legacy": lh, "react": None,
-                           "where": {"table_index": idx}, "hint": "Table missing in React; add with these columns IN ORDER."}); continue
-        if [norm(x) for x in lh] != [norm(x) for x in rh]:
+    """Diff DATA tables (>=1 non-empty header) aligned by header similarity — NOT by document index.
+    Legacy pages use headerless nested tables for LAYOUT; pairing by index shifts every real data table
+    and cascades false column mismatches. Layout-table count drift is markup shape, not content — the
+    text/control lanes already check what's inside — so it's reported once, as a NESTING delta."""
+    all_lt, all_rt = legacy.get("tables", []), react.get("tables", [])
+    lt = [t for t in all_lt if any(norm(h) for h in t.get("headers", []))]
+    rt = [t for t in all_rt if any(norm(h) for h in t.get("headers", []))]
+    lk = [" | ".join(norm(h) for h in t["headers"]) for t in lt]
+    rk = [" | ".join(norm(h) for h in t["headers"]) for t in rt]
+    sm = difflib.SequenceMatcher(a=lk, b=rk, autojunk=False)
+    pending_del, pending_ins = [], []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        if tag in ("delete", "replace"):
+            pending_del += list(range(i1, i2))
+        if tag in ("insert", "replace"):
+            pending_ins += list(range(j1, j2))
+    used = set()
+    for li in pending_del:
+        best, best_ratio = None, 0.0
+        for pos, rj in enumerate(pending_ins):
+            if pos in used:
+                continue
+            r = difflib.SequenceMatcher(a=lk[li], b=rk[rj], autojunk=False).ratio()
+            if r > best_ratio:
+                best, best_ratio = pos, r
+        if best is not None and best_ratio >= 0.5:   # same table, columns drifted
+            used.add(best)
+            rj = pending_ins[best]
             deltas.append({"type": "table_columns_mismatch", "severity": "critical",
-                           "legacy": lh, "react": rh, "where": {"table_index": idx},
+                           "legacy": lt[li]["headers"], "react": rt[rj]["headers"],
+                           "where": {"table_index": li},
                            "hint": "Column set/order/text differ. Match columns exactly, in order."})
+        else:
+            deltas.append({"type": "missing_table", "severity": "critical", "legacy": lt[li]["headers"],
+                           "react": None, "where": {"table_index": li},
+                           "hint": "Data table missing in React; add with these columns IN ORDER."})
+    for pos, rj in enumerate(pending_ins):
+        if pos in used:
+            continue
+        deltas.append({"type": "extra_table", "severity": "critical", "legacy": None,
+                       "react": rt[rj]["headers"], "where": {"table_index": rj},
+                       "hint": "Extra data table in React; remove it (no new artifacts)."})
+    ll, rl = len(all_lt) - len(lt), len(all_rt) - len(rt)
+    if ll != rl:
+        deltas.append({"type": "layout_table_shape", "severity": "nesting",
+                       "legacy": "%d headerless layout tables" % ll, "react": "%d" % rl, "where": {},
+                       "hint": "Legacy builds its LAYOUT from headerless nested tables; the React markup shape "
+                               "differs but the content lanes above check everything inside them. Do NOT "
+                               "recreate legacy table-soup markup to silence this."})
 
 
 def focusable_seq(model):
@@ -174,16 +216,54 @@ def diff_styles(legacy, react, deltas):
                                "hint": f"{p}: legacy {ls.get(p)} vs react {rs.get(p)} (Δ{abs(a-b):.0f}px)."})
 
 
+CHUNK_HINT = ("Same text exists on the other side, just split/merged across different elements (legacy "
+              "markup nesting). No content is lost — do NOT restructure to legacy nesting to silence this.")
+
+
+def _blob(model):
+    """All visible text in DOM order, space-joined and space-padded, for boundary substring checks."""
+    return " " + " ".join(norm(el.get("text")) for el in model.get("elements", []) if norm(el.get("text"))) + " "
+
+
+def _present(blob, t):
+    return bool(t) and (" %s " % t) in blob
+
+
+def reclassify_chunking(deltas, legacy, react):
+    """Demote TEXT deltas whose content IS present on the other side (one legacy text node rendered as
+    two React spans, or vice versa) from critical to NESTING — different grouping, not lost content.
+    CTRL/IMG identity deltas always stay critical (a missing control is missing even if its label text
+    appears elsewhere)."""
+    # ponytail: boundary-substring presence can misclass a lost DUPLICATE ("Delete" x3 -> x2) as
+    # nesting; the delta is still reported. Add per-key occurrence counting if that ever bites.
+    lblob, rblob = _blob(legacy), _blob(react)
+    for d in deltas:
+        if d["severity"] != "critical":
+            continue
+        if d["type"] == "text_mismatch" and d.get("kind") == "TEXT":
+            if _present(rblob, norm(d.get("legacy"))) and _present(lblob, norm(d.get("react"))):
+                d["severity"], d["hint"] = "nesting", CHUNK_HINT
+        elif d["type"] in ("missing_in_react", "extra_in_react"):
+            key = str(d["legacy"] if d["type"] == "missing_in_react" else d["react"])
+            if not key.startswith("TEXT:"):
+                continue
+            blob = rblob if d["type"] == "missing_in_react" else lblob
+            if _present(blob, norm(key.split(":", 1)[1])):
+                d["severity"], d["hint"] = "nesting", CHUNK_HINT
+
+
 def build_diff(legacy, react):
     deltas = []
     diff_salient(salient_list(legacy), salient_list(react), deltas)
     diff_tables(legacy, react, deltas)
     diff_order(legacy, react, deltas)
     diff_styles(legacy, react, deltas)
+    reclassify_chunking(deltas, legacy, react)
     crit = [d for d in deltas if d["severity"] == "critical"]
+    nest = [d for d in deltas if d["severity"] == "nesting"]
     adv = [d for d in deltas if d["severity"] == "advisory"]
-    return {"critical": crit, "advisory": adv,
-            "summary": {"critical": len(crit), "advisory": len(adv),
+    return {"critical": crit, "nesting": nest, "advisory": adv,
+            "summary": {"critical": len(crit), "nesting": len(nest), "advisory": len(adv),
                         "legacy_title": legacy.get("title"), "react_title": react.get("title")}}
 
 
@@ -206,7 +286,33 @@ def main():
              "input": {"name": "acct", "type": "text", "placeholder": ""}}], "tables": [], "forms": []}
         d = build_diff(L, R)
         assert d["summary"]["critical"] == 1 and d["critical"][0]["type"] == "text_mismatch", d
-        print(json.dumps({"self_check": "ok", "delta": d["critical"][0]}, indent=1)); return
+
+        # NESTING (not critical): one legacy text node rendered as two React spans — content present,
+        # grouping differs. Must NOT fail the gate; a truly changed label (above) still must.
+        L2 = {"title": "x", "elements": [
+            {"i": 0, "tag": "td", "text": "Total: $5m", "box": {}, "style": {}, "path": "0/0"}], "tables": [], "forms": []}
+        R2 = {"title": "x", "elements": [
+            {"i": 0, "tag": "span", "text": "Total:", "box": {}, "style": {}, "path": "0/0"},
+            {"i": 1, "tag": "span", "text": "$5m", "box": {}, "style": {}, "path": "0/1"}], "tables": [], "forms": []}
+        d2 = build_diff(L2, R2)
+        assert d2["summary"]["critical"] == 0 and d2["summary"]["nesting"] >= 1, d2
+
+        # NESTING (not critical): legacy headerless LAYOUT tables vs clean React markup — but a real
+        # DATA table (has headers) still diffs critically, aligned by similarity not index.
+        L3 = {"title": "x", "elements": [], "forms": [], "tables": [
+            {"headers": [], "rowCount": 0}, {"headers": [], "rowCount": 2}, {"headers": [], "rowCount": 0},
+            {"headers": ["Name", "Rank"], "rowCount": 5}]}
+        R3 = {"title": "x", "elements": [], "forms": [], "tables": [{"headers": ["Name", "Rank"], "rowCount": 5}]}
+        d3 = build_diff(L3, R3)
+        assert d3["summary"]["critical"] == 0 and d3["summary"]["nesting"] == 1, d3
+        R3bad = {"title": "x", "elements": [], "forms": [], "tables": [{"headers": ["Name", "Level"], "rowCount": 5}]}
+        d3b = build_diff(L3, R3bad)
+        assert d3b["summary"]["critical"] == 1 and d3b["critical"][0]["type"] == "table_columns_mismatch", d3b
+
+        print(json.dumps({"self_check": "ok", "delta": d["critical"][0]["type"],
+                          "chunking_is_nesting": d2["summary"]["nesting"],
+                          "layout_tables_are_nesting": d3["summary"]["nesting"],
+                          "data_table_still_critical": d3b["summary"]["critical"]}, indent=1)); return
 
     legacy = json.load(open(args.legacy, encoding="utf-8"))
     react = json.load(open(args.react, encoding="utf-8"))

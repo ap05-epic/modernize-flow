@@ -80,10 +80,13 @@ recorded fragments = lift-and-shift, not modernization, and it defeats the parit
 the **DATA** — extract the values into props and render them via React components built from the source-model. Build
 the **app shell** too (nav tabs + header + panel layout). A view that ships legacy HTML, omits the chrome, or
 mislabels a panel is NOT done — `verify_screen` (don't skip it) must show 0 critical DOM deltas vs the oracle first.
+(Critical = CONTENT: labels, controls, columns, values, links. **Nesting deltas** — same content, different markup
+grouping, e.g. legacy layout-table soup — are advisory by design: never rebuild legacy nested markup to chase them.)
 
 ## Verification (mandatory before `verified` — evidence, not eye)
 Capture the React render with the SAME profile; `parity-verify/verify_screen.py --data-mode <record|live>` (0 critical
-DOM deltas + data present + record: pixel ≤ threshold / live: style match). Fix from the concrete delta; re-verify.
+CONTENT deltas + data present + record: pixel ≤ threshold / live: style match; nesting-only deltas are advisory).
+Fix from the concrete delta; re-verify.
 **Capture BOTH sides ONLY with `legacy-crawl-capture/capture_screen.py`** — it emits the `.model.json` the DOM lane
 diffs (and the HAR with `--record-har`); the generic `playwright-cli`/`webapp-testing` snapshot is YAML/text the DOM
 lane can't read, so it stalls verify_screen. A high pixel ratio with no DOM lane = React data not wired yet, not a

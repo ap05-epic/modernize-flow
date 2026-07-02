@@ -10,8 +10,11 @@ subjective. This skill replaces that with a **deterministic gate**: a screen is 
 script says so. Two complementary lanes:
 
 - **DOM lane** (`dom_diff.py`) — semantic exactness. Catches what pixels can't: a label typo that looks
-  identical, a swapped field, a missing column, changed validation text. These are **critical** and fail
-  the gate.
+  identical, a swapped field, a missing column, changed validation text. These are **critical (CONTENT)**
+  deltas and fail the gate. Deltas that are only markup GROUPING — the same text split/merged across
+  different elements, or legacy's headerless layout-table soup vs clean React markup — are classified
+  **nesting**: reported, but not gated (`--strict-nesting` restores the old behavior). Clean React is
+  never forced to reproduce 1998 nested-table markup.
 - **Pixel lane** (`pixel_diff.js`, pixelmatch) — visual exactness. Catches what the DOM can't: wrong
   spacing, color, font metrics. Emits a mismatch ratio **and located regions**, each mapped to the React
   element under it so the fix is targeted.
@@ -38,16 +41,20 @@ python scripts/verify_screen.py \
 ```
 Writes `f010_default.parity-report.md` (read this), `.parity-report.json`, `.diff.png`,
 `.side-by-side.png`. **Exit code 0 = PASS, 2 = FAIL** — gate on it in the implementation loop.
-PASS (record) = **0 critical structural deltas AND data present AND pixel ratio ≤ threshold AND no size
-mismatch**. PASS (live) = **0 critical deltas AND data present AND style match** (pixel advisory).
+PASS (record) = **0 critical CONTENT deltas AND data present AND pixel ratio ≤ threshold AND no size
+mismatch**. PASS (live) = **0 critical CONTENT deltas AND data present AND style match** (pixel advisory).
+Nesting deltas (same content, different markup grouping) are listed in the report but do not gate;
+add `--strict-nesting` to gate them too.
 
 ### dom_diff.py — structural lane alone (importable)
 ```bash
 python scripts/dom_diff.py --legacy a.model.json --react b.model.json --out deltas.json
 ```
-Critical delta types: `text_mismatch`, `missing_in_react`, `extra_in_react`, `table_columns_mismatch`,
-`missing_table`/`extra_table`, `tab_order_mismatch`. Advisory: per-element `style` deltas (used as fix
-hints for pixel regions, not gated).
+Critical (CONTENT) delta types: `text_mismatch`, `missing_in_react`, `extra_in_react`,
+`table_columns_mismatch`, `missing_table`/`extra_table` (data tables — aligned by header similarity, so
+legacy layout tables can't shift the pairing), `tab_order_mismatch`. Nesting (reported, not gated): the
+same TEXT present but chunked differently, and `layout_table_shape` (headerless layout-table count
+drift). Advisory: per-element `style` deltas (used as fix hints for pixel regions, not gated).
 
 ### pixel_diff.js — pixel lane alone
 ```bash

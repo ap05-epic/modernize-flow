@@ -98,11 +98,12 @@ Once 2+ views are built, wire the navigation so the replica walks like the real 
 ### F — A verify gate is failing (fix from the report, not by eye)
 
 > "Use the **<modernize-flow | jsp2react>** agent. `verify_screen` for `<view>` is failing
-> (`<N structural deltas / pixel ratio>`). Read the parity report at `<…/parity/…>` and fix ONLY what
-> the concrete deltas name — labels, columns, structure, styles — in the React component (never by
-> restyling to taste, never by touching the oracle). Re-capture the React side with the SAME profile,
-> re-run verify_screen, repeat until it passes. If a remaining delta is legacy nesting cruft that
-> can't be reproduced with clean React, stop and show me exactly those deltas instead of forcing them."
+> (`<N critical deltas / pixel ratio>`). Read the parity report at `<…/parity/…>` and fix ONLY what the
+> report lists as **critical (content) deltas** — labels, columns, controls, values — in the React
+> component (never by restyling to taste, never by touching the oracle). **Nesting deltas are advisory
+> and don't fail the gate — do not rebuild legacy nested markup to chase them.** Re-capture the React
+> side with the SAME profile, re-run verify_screen, repeat until it passes or a critical delta needs
+> evidence we don't have — then stop and show me that delta."
 
 ### G — Go wide (batch run with guardrails)
 

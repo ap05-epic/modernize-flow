@@ -203,8 +203,10 @@ prompt-writing rules for Copilot CLI, and the anti-patterns that caused real fai
 4. Data is REAL in every mode: **record** replays the HAR; **live** proxies the real backend; **api** (FULL) is the
    new endpoint, checked against the HAR. Never hand‑author data. Use `cics-analysis` for COMMAREA/DB2 contracts only
    if that source is in scope.
-5. Pixel‑exact JSP↔React isn't realistic; the frontend gate is **strict structural + data‑presence + (record) pixel /
-   (live) style** (`--pixel-threshold` per view; never relax the structural gate). The backend gate
+5. Pixel‑exact JSP↔React isn't realistic; the frontend gate is **content‑structural (labels/controls/columns
+   exact) + data‑presence + (record) pixel / (live) style** (`--pixel-threshold` per view; never relax the CONTENT
+   gate). Nesting‑only deltas — same content, different markup grouping (legacy layout‑table soup) — are advisory
+   by design; `verify_screen --strict-nesting` gates them if ever needed. The backend gate
    (`verify_contract.py`) is **field/type/value vs the recorded HAR**.
 6. Script CLIs here are the contract; if a reused pod skill's flags differ (OCR drift), run `--help` and adjust.
 

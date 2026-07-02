@@ -66,11 +66,13 @@ file (status.md)** with rows as fine‑grained as a single dropdown or table. Th
 
 A slice passes only when a **script — not the AI's opinion** — says so.
 
-**Frontend (every mode):** three checks. (1) **Structure** — every label, column, field order, tab order,
-validation message, control must match *exactly* (catches "Acct #" vs "Account #"). (2) **Data** — the React side
-actually rendered the **real data**, not an empty/half‑loaded table. (3) **Picture** — pixel‑by‑pixel, pointing at
-*which element* is off; exact in record mode, advisory in live mode (font anti‑aliasing ignored; real
-layout/spacing/color is not).
+**Frontend (every mode):** three checks. (1) **Content** — every label, column, field order, tab order,
+validation message, control must match *exactly* (catches "Acct #" vs "Account #"). Differences that are only
+*how content is grouped* don't fail — the old app built its layout out of tables-inside-tables and the new
+code rightly doesn't copy that; those are reported separately as "nesting" so nobody chases them. (2) **Data**
+— the React side actually rendered the **real data**, not an empty/half‑loaded table. (3) **Picture** —
+pixel‑by‑pixel, pointing at *which element* is off; exact in record mode, advisory in live mode (font
+anti‑aliasing ignored; real layout/spacing/color is not).
 
 **Backend (full mode):** the new Spring Boot endpoint's JSON is compared against the **recorded real response**
 from the old app (the same HAR file the capture saved). Every field the old response had must be present, with the

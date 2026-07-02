@@ -95,6 +95,9 @@ Do this ONCE, then implement repeatedly. Order matters:
   built from the source-model. Also build the **app shell** (the nav tabs + FA header + the contentlet panel
   layout), not just the inner fragments. A view that ships legacy HTML, omits the chrome, or mislabels a panel is
   NOT done — `verify_screen` (run it, don't skip) must show 0 critical DOM deltas against the legacy oracle first.
+  (Critical = CONTENT: labels, controls, columns, values, links. **Nesting deltas** — same content, different
+  markup grouping, e.g. legacy layout-table soup — are advisory by design: do NOT rebuild legacy nested markup
+  to chase them; fix only what the report lists as critical.)
 - **Backend (FULL)** — `scaffold_backend.py` from `backend-model.json` (controller/service/gateway/DTO/OpenAPI),
   then fill: the result-set→DTO mapping, the **ServiceImpl business semantics** ported from the legacy service/builder
   (`[SVC:…]` — match legacy behavior before improving), and the session/entity/entitlement binding
@@ -106,8 +109,8 @@ Do this ONCE, then implement repeatedly. Order matters:
 ## Verification (mandatory before `verified` — evidence, not eye)
 
 - **Frontend**: capture the React render with the SAME profile, then
-  `parity-verify/verify_screen.py --data-mode <record|live>` (0 critical DOM deltas + data present + record: pixel ≤
-  threshold / live: style match). Fix from the concrete delta; re-verify. **Capture BOTH sides ONLY with
+  `parity-verify/verify_screen.py --data-mode <record|live>` (0 critical CONTENT deltas + data present + record:
+  pixel ≤ threshold / live: style match; nesting-only deltas are advisory). Fix from the concrete delta; re-verify. **Capture BOTH sides ONLY with
   `legacy-crawl-capture/capture_screen.py`** — it emits the normalized `.model.json` the DOM lane diffs (and, with
   `--record-har`, the HAR). The generic `playwright-cli`/`webapp-testing` snapshot produces YAML/text that the DOM
   lane CANNOT read — substituting it stalls verify_screen and leaves a pixel-only result. A high pixel ratio with no

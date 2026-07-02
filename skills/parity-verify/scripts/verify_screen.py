@@ -4,10 +4,14 @@ verify_screen.py — run both parity lanes, fuse them, gate, and emit an ACTIONA
 
 Inputs: legacy + react model.json and png (all from capture_screen.py, same viewport/fixture).
 Pipeline:
-  1. dom_diff.build_diff(legacy, react)         -> critical structural deltas + advisory style hints
+  1. dom_diff.build_diff(legacy, react)         -> critical CONTENT deltas + nesting (grouping-only)
+                                                   deltas + advisory style hints
   2. pixel_diff.js                              -> mismatch ratio + located changed-regions
   3. map each pixel region -> the React element under it (so "where" is concrete)
-  4. GATE: PASS iff 0 critical structural deltas AND pixel ratio <= threshold AND no size mismatch
+  4. GATE: PASS iff 0 critical (content) deltas AND data present AND pixel ratio <= threshold AND no
+     size mismatch. NESTING deltas (same content, different markup grouping — legacy layout-table soup,
+     split/merged text nodes) are reported but do NOT gate: clean React must not reproduce 1998 markup.
+     --strict-nesting restores the old behavior (nesting gates too).
   5. write parity-report.json + parity-report.md + reference side-by-side.png ; exit 0 (pass) / 2 (fail)
 
 The report is written FOR THE BUILDER: it says exactly what differs and where, so the model makes
@@ -34,15 +38,21 @@ def data_presence(legacy, react):
             "legacy_rows": lrows, "react_rows": rrows, "reasons": reasons}
 
 
-def compute_gate(dom, data, ratio, size_ok, threshold, mode):
+def compute_gate(dom, data, ratio, size_ok, threshold, mode, strict_nesting=False):
     """Fuse the lanes into the pass/fail decision. record mode gates on exact pixels; live mode treats pixels
-    as advisory and gates on structure + data-presence + comparable size."""
+    as advisory and gates on structure + data-presence + comparable size. Only CONTENT (critical) deltas
+    gate; NESTING deltas (same content, different markup grouping) are reported, not gated — unless
+    strict_nesting restores the old behavior."""
     pixel_ok = (ratio is not None) and (ratio <= threshold) and size_ok
     pixel_gates = pixel_ok if mode == "record" else size_ok
+    nesting = dom["summary"].get("nesting", 0)
+    gating = dom["summary"]["critical"] + (nesting if strict_nesting else 0)
     return {
-        "pass": dom["summary"]["critical"] == 0 and data["ok"] and pixel_gates,
+        "pass": gating == 0 and data["ok"] and pixel_gates,
         "data_mode": mode,
         "critical_structural": dom["summary"]["critical"],
+        "nesting_structural": nesting,
+        "nesting_gated": bool(strict_nesting),
         "data_present": data["ok"],
         "pixel_ratio": ratio,
         "pixel_threshold": threshold,
@@ -99,7 +109,9 @@ def build_report_md(name, result):
                  f"({'pixel GATED — exact' if g.get('pixel_gated') else 'pixel ADVISORY — live data drifts; gating on structure/style/data'})")
     px_tag = "" if g.get("pixel_gated") else "  _(advisory in live mode)_"
     lines.append(f"- pixel mismatch: **{(p.get('ratio') or 0)*100:.3f}%** (threshold {g['pixel_threshold']*100:.3f}%){px_tag}")
-    lines.append(f"- critical structural deltas: **{g['critical_structural']}**")
+    lines.append(f"- critical (content) deltas: **{g['critical_structural']}**")
+    lines.append(f"- nesting deltas (same content, different grouping): **{g.get('nesting_structural', 0)}**"
+                 + ("  _(GATED — --strict-nesting)_" if g.get("nesting_gated") else "  _(advisory — do not rebuild legacy nesting)_"))
     lines.append(f"- data present: **{'yes' if d.get('ok', True) else 'NO'}** "
                  f"(react {d.get('react_elements','?')}/{d.get('legacy_elements','?')} elements, "
                  f"rows {d.get('react_rows','?')}/{d.get('legacy_rows','?')})")
@@ -120,6 +132,18 @@ def build_report_md(name, result):
             loc = w.get("selector") or w.get("table_index") or ""
             lines.append(f"{i}. **{d['type']}** — legacy `{d.get('legacy')}` → react `{d.get('react')}`  @ `{loc}`")
             lines.append(f"   ↳ {d.get('hint','')}")
+        lines.append("")
+
+    nest = result["dom"].get("nesting", [])
+    if nest:
+        lines.append("## Nesting deltas — same content, different markup grouping "
+                     + ("(GATED by --strict-nesting)" if g.get("nesting_gated") else "(advisory — no action needed)"))
+        for i, d in enumerate(nest[:20], 1):
+            w = d.get("where", {})
+            loc = w.get("selector") or w.get("table_index") or ""
+            lines.append(f"{i}. **{d['type']}** — legacy `{d.get('legacy')}` → react `{d.get('react')}`  @ `{loc}`")
+        if len(nest) > 20:
+            lines.append(f"… and {len(nest) - 20} more (see parity-report.json).")
         lines.append("")
 
     regs = result["pixel"].get("regions_annotated", [])
@@ -166,8 +190,19 @@ def self_check():
     g4 = compute_gate(dom_diff.build_diff(legacy, model()), data_presence(legacy, model()), 0.2, True, 0.005, "record")
     g5 = compute_gate(dom_diff.build_diff(legacy, model()), data_presence(legacy, model()), 0.2, True, 0.005, "live")
     assert not g4["pass"] and g5["pass"], (g4, g5)
+    # nesting-only deltas (same content, different grouping) do NOT gate — unless --strict-nesting
+    chunked = {"title": "x", "elements": [
+        {"i": 0, "tag": "span", "text": "Account", "box": {}, "style": {}, "path": "0/0"},
+        {"i": 1, "tag": "span", "text": "#", "box": {}, "style": {}, "path": "0/1"}],
+        "tables": [{"index": 0, "rowCount": 3, "headers": ["A", "B"]}], "forms": []}
+    dom6 = dom_diff.build_diff(model("Account #", 3), chunked)
+    assert dom6["summary"]["critical"] == 0 and dom6["summary"]["nesting"] >= 1, dom6
+    g6 = compute_gate(dom6, data_presence(model("Account #", 3), chunked), 0.0, True, 0.005, "record")
+    g7 = compute_gate(dom6, data_presence(model("Account #", 3), chunked), 0.0, True, 0.005, "record", strict_nesting=True)
+    assert g6["pass"] and not g7["pass"], (g6, g7)
     print(json.dumps({"self_check": "ok", "pass_identical": g["pass"], "fail_text_mismatch": not g2["pass"],
-                      "fail_empty_data": not g3["pass"], "record_gates_pixels": not g4["pass"], "live_tolerates": g5["pass"]}))
+                      "fail_empty_data": not g3["pass"], "record_gates_pixels": not g4["pass"], "live_tolerates": g5["pass"],
+                      "nesting_passes": g6["pass"], "strict_nesting_gates": not g7["pass"]}))
 
 
 def main():
@@ -184,6 +219,9 @@ def main():
     ap.add_argument("--data-mode", choices=["record", "live"], default="record",
                     help="record: data is the SAME recorded responses -> pixel parity is GATED (exact). "
                          "live: data is real-time and drifts -> pixel is advisory, gate on structure+style+data-presence.")
+    ap.add_argument("--strict-nesting", action="store_true",
+                    help="Also gate on NESTING deltas (same content, different markup grouping) — the old "
+                         "strict behavior. Default: nesting deltas are reported but only CONTENT deltas gate.")
     ap.add_argument("--node", default="node")
     ap.add_argument("--pixel-diff", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "pixel_diff.js"))
     args = ap.parse_args()
@@ -212,7 +250,7 @@ def main():
     data = data_presence(legacy, react)
     ratio = pixel.get("ratio") if isinstance(pixel, dict) else None
     size_ok = isinstance(pixel, dict) and not pixel.get("dimMismatch") and not pixel.get("error")
-    gate = compute_gate(dom, data, ratio, size_ok, args.pixel_threshold, args.data_mode)
+    gate = compute_gate(dom, data, ratio, size_ok, args.pixel_threshold, args.data_mode, args.strict_nesting)
     result = {"name": args.name, "gate": gate, "dom": dom, "pixel": pixel, "data": data}
     json.dump(result, open(os.path.join(args.out_dir, args.name + ".parity-report.json"), "w", encoding="utf-8"), indent=1)
     open(os.path.join(args.out_dir, args.name + ".parity-report.md"), "w", encoding="utf-8").write(build_report_md(args.name, result))
