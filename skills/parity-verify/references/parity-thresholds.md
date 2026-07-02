@@ -19,10 +19,13 @@ The gate has two knobs. Tune them in status.md §3 and pass via `verify_screen.p
    screen exactly. There is no tolerance here; a critical delta is a real fidelity defect. Do not "raise
    the threshold" — fix the React code.
    **Nesting deltas do not gate.** Same content, different markup grouping — one legacy text node
-   rendered as two React spans, or legacy's headerless nested layout-tables vs clean React markup — is
-   classified `nesting`: listed in the report (it explains pixel drift) but not a defect. Rebuilding
-   legacy table-soup markup to silence these would be anti-modernization. `--strict-nesting` gates them
-   if a screen ever truly needs identical markup shape.
+   rendered as two React spans (punctuation-insensitive: "(All Branches)" ↔ "All Branches"), legacy's
+   headerless nested layout-tables vs clean React markup, a legacy section-title table rendered as a
+   React heading, or columns re-segmented into different tables — is classified `nesting`: listed in
+   the report (it explains pixel drift) but not a defect. Rebuilding legacy table-soup markup to
+   silence these would be anti-modernization. `--strict-nesting` gates them if a screen ever truly
+   needs identical markup shape. (A same-set column REORDER, a changed label, or text absent from the
+   other side entirely stays **critical** — content is still exact.)
 
 2. **Visual (pixel lane) — thresholded.** Target: **pixel mismatch ratio ≤ 0.005 (0.5%)** by default.
    Exact-to-the-pixel parity between a JSP/Dojo-rendered page and a React port is not realistic because

@@ -11,7 +11,9 @@ Three severities:
   CRITICAL — content differs: missing/extra control or text, text mismatch, label/name/type mismatch,
              DATA-table column missing/extra/reordered, field or tab order mismatch. Fails the gate.
   NESTING  — same content, different markup GROUPING: a text present on both sides but split/merged
-             across different elements, or legacy's headerless layout-table soup vs clean React layout.
+             across different elements (punctuation-insensitively — "(All Branches)" vs "All Branches"),
+             legacy's headerless layout-table soup vs clean React layout, a legacy section-title table
+             rendered as a React heading, or columns re-segmented into different tables/sections.
              Reported (it explains pixel drift) but does NOT fail the gate — clean React must not be
              forced to reproduce 1998 nested-table markup. (verify_screen --strict-nesting gates it.)
   ADVISORY — per-element style value differences; guide pixel fixes.
@@ -94,7 +96,9 @@ def diff_salient(legacy, react, deltas):
                 continue
             if dk.split(":", 1)[0] != ik.split(":", 1)[0]:
                 continue  # only pair like-with-like (TEXT/CTRL/IMG)
-            ratio = difflib.SequenceMatcher(a=dk, b=ik).ratio()
+            # ratio on the VALUE only: the shared "TEXT:" prefix inflates similarity of short values
+            # (e.g. "TEXT:2023" vs "TEXT:39" pairs at ~0.7), producing nonsense text_mismatch pairs.
+            ratio = difflib.SequenceMatcher(a=dk.split(":", 1)[1], b=ik.split(":", 1)[1]).ratio()
             if ratio > best_ratio:
                 best, best_ratio = idx, ratio
         if best is not None and best_ratio >= 0.5:
@@ -216,24 +220,42 @@ def diff_styles(legacy, react, deltas):
                                "hint": f"{p}: legacy {ls.get(p)} vs react {rs.get(p)} (Δ{abs(a-b):.0f}px)."})
 
 
-CHUNK_HINT = ("Same text exists on the other side, just split/merged across different elements (legacy "
+CHUNK_HINT = ("Same text exists on the other side, just split/merged/grouped differently (legacy "
               "markup nesting). No content is lost — do NOT restructure to legacy nesting to silence this.")
+SEGMENT_HINT = ("This table's headers all exist as content on the other side — the section is rendered "
+                "with a different table segmentation/markup, not missing. Do NOT rebuild legacy table "
+                "structure to silence this.")
+
+
+def _fold(s):
+    """Punctuation-insensitive token form: legacy '(All Branches)' must match react 'All Branches' —
+    parens/colons around the same words are markup dressing, not content. Case still matters."""
+    return " " + re.sub(r"[^0-9A-Za-z]+", " ", s or "").strip() + " "
 
 
 def _blob(model):
-    """All visible text in DOM order, space-joined and space-padded, for boundary substring checks."""
-    return " " + " ".join(norm(el.get("text")) for el in model.get("elements", []) if norm(el.get("text"))) + " "
+    """All visible text in DOM order (folded + raw forms), space-padded for boundary substring checks."""
+    joined = " ".join(norm(el.get("text")) for el in model.get("elements", []) if norm(el.get("text")))
+    return {"fold": _fold(joined), "raw": " " + joined + " "}
 
 
 def _present(blob, t):
-    return bool(t) and (" %s " % t) in blob
+    # ponytail: folding means punctuation-only label drift ("Account #" -> "Account") classes as
+    # nesting, not critical — it is still reported, and the pixel lane shows it in record mode.
+    ft = _fold(t).strip()
+    if ft:
+        return (" %s " % ft) in blob["fold"]
+    rt = norm(t)                       # pure-punctuation token ("#", "$"): check the raw text instead
+    return bool(rt) and (" %s " % rt) in blob["raw"]
 
 
-def reclassify_chunking(deltas, legacy, react):
-    """Demote TEXT deltas whose content IS present on the other side (one legacy text node rendered as
-    two React spans, or vice versa) from critical to NESTING — different grouping, not lost content.
-    CTRL/IMG identity deltas always stay critical (a missing control is missing even if its label text
-    appears elsewhere)."""
+def reclassify_nesting(deltas, legacy, react):
+    """Demote deltas whose CONTENT is present on the other side from critical to NESTING — different
+    grouping/segmentation, not lost content. Covers: TEXT chunking (one legacy node -> two React spans),
+    tables rendered with a different segmentation (a legacy section-title table -> a React heading), and
+    column sets that moved between tables. CTRL/IMG identity deltas always stay critical (a missing
+    control is missing even if its label text appears elsewhere); a reordered same-set column list stays
+    critical (column ORDER is content)."""
     # ponytail: boundary-substring presence can misclass a lost DUPLICATE ("Delete" x3 -> x2) as
     # nesting; the delta is still reported. Add per-key occurrence counting if that ever bites.
     lblob, rblob = _blob(legacy), _blob(react)
@@ -248,8 +270,20 @@ def reclassify_chunking(deltas, legacy, react):
             if not key.startswith("TEXT:"):
                 continue
             blob = rblob if d["type"] == "missing_in_react" else lblob
-            if _present(blob, norm(key.split(":", 1)[1])):
+            if _present(blob, key.split(":", 1)[1]):
                 d["severity"], d["hint"] = "nesting", CHUNK_HINT
+        elif d["type"] in ("missing_table", "extra_table"):
+            headers = d["legacy"] if d["type"] == "missing_table" else d["react"]
+            blob = rblob if d["type"] == "missing_table" else lblob
+            heads = [h for h in (headers or []) if norm(h)]
+            if heads and all(_present(blob, norm(h)) for h in heads):
+                d["severity"], d["hint"] = "nesting", SEGMENT_HINT
+        elif d["type"] == "table_columns_mismatch":
+            lset = {norm(h) for h in (d.get("legacy") or []) if norm(h)}
+            rset = {norm(h) for h in (d.get("react") or []) if norm(h)}
+            if lset != rset:   # same set + different order = a true column reorder -> stays critical
+                if all(_present(rblob, h) for h in lset - rset) and all(_present(lblob, h) for h in rset - lset):
+                    d["severity"], d["hint"] = "nesting", SEGMENT_HINT
 
 
 def build_diff(legacy, react):
@@ -258,7 +292,7 @@ def build_diff(legacy, react):
     diff_tables(legacy, react, deltas)
     diff_order(legacy, react, deltas)
     diff_styles(legacy, react, deltas)
-    reclassify_chunking(deltas, legacy, react)
+    reclassify_nesting(deltas, legacy, react)
     crit = [d for d in deltas if d["severity"] == "critical"]
     nest = [d for d in deltas if d["severity"] == "nesting"]
     adv = [d for d in deltas if d["severity"] == "advisory"]
@@ -309,10 +343,46 @@ def main():
         d3b = build_diff(L3, R3bad)
         assert d3b["summary"]["critical"] == 1 and d3b["critical"][0]["type"] == "table_columns_mismatch", d3b
 
+        def m(elements=(), tables=()):
+            els = [{"i": i, "tag": "td", "text": t, "box": {}, "style": {}, "path": "0/%d" % i}
+                   for i, t in enumerate(elements)]
+            return {"title": "x", "elements": els, "tables": list(tables), "forms": []}
+
+        # regression (pod triage): short numeric values must NOT pair as text_mismatch — the shared
+        # "TEXT:" key prefix used to inflate similarity ("2023" was pairing with "39").
+        d4 = build_diff(m(["2023"]), m(["39"]))
+        assert not any(x["type"] == "text_mismatch" for x in d4["critical"]), d4
+        assert d4["summary"]["critical"] == 2, d4   # genuinely different content stays critical
+
+        # regression (pod triage): punctuation must not defeat the presence check — legacy
+        # "Rank (All Branches)" in one cell vs react "Rank" + "All Branches" cells is NESTING.
+        d5 = build_diff(m(["Rank (All Branches)"]), m(["Rank", "All Branches"]))
+        assert d5["summary"]["critical"] == 0 and d5["summary"]["nesting"] >= 1, d5
+
+        # regression (pod triage): a legacy section-title table rendered as a React heading (content
+        # present, no matching <table>) is NESTING, not missing_table.
+        d6 = build_diff(m(["Compensation"], [{"headers": ["Compensation"], "rowCount": 2}]),
+                        m(["Compensation"]))
+        assert d6["summary"]["critical"] == 0 and d6["summary"]["nesting"] == 1, d6
+
+        # regression (pod triage): columns re-segmented into other tables/sections (set differs, texts
+        # present on the other side) is NESTING — but a same-set column REORDER stays critical.
+        d7 = build_diff(m(["C"], [{"headers": ["A", "B", "C"], "rowCount": 1}]),
+                        m(["C"], [{"headers": ["A", "B"], "rowCount": 1}]))
+        assert d7["summary"]["critical"] == 0 and d7["summary"]["nesting"] == 1, d7
+        d8 = build_diff(m((), [{"headers": ["A", "B"], "rowCount": 1}]),
+                        m((), [{"headers": ["B", "A"], "rowCount": 1}]))
+        assert d8["summary"]["critical"] == 1 and d8["critical"][0]["type"] == "table_columns_mismatch", d8
+
         print(json.dumps({"self_check": "ok", "delta": d["critical"][0]["type"],
                           "chunking_is_nesting": d2["summary"]["nesting"],
                           "layout_tables_are_nesting": d3["summary"]["nesting"],
-                          "data_table_still_critical": d3b["summary"]["critical"]}, indent=1)); return
+                          "data_table_still_critical": d3b["summary"]["critical"],
+                          "short_numerics_unpaired": d4["summary"]["critical"],
+                          "punct_chunking_is_nesting": d5["summary"]["nesting"],
+                          "section_title_table_is_nesting": d6["summary"]["nesting"],
+                          "moved_columns_are_nesting": d7["summary"]["nesting"],
+                          "column_reorder_still_critical": d8["summary"]["critical"]}, indent=1)); return
 
     legacy = json.load(open(args.legacy, encoding="utf-8"))
     react = json.load(open(args.react, encoding="utf-8"))
