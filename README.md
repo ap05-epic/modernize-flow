@@ -113,3 +113,7 @@ The **business‑logic translation** itself (the agent ports the legacy service/
 mainframe/COBOL/BMS (delegated to the pod's separate `cics-analysis` agent); responsive/mobile; accessibility
 remediation; animation modeling; CI wiring. The replica targets the legacy desktop viewport at parity. *(Backend
 modernization is now IN scope in full mode — it was out of scope in v2.)*
+
+---
+
+Made by **Anshuman Pandey** · Summer Intern 2026 · AI Pod
