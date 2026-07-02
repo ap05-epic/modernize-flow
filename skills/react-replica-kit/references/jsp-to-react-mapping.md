@@ -17,7 +17,7 @@ source, don't reconstruct it by eyeballing the screenshot. See `legacy-crawl-cap
 
 | Legacy construct | Rendered as | React + TS equivalent | Notes |
 |---|---|---|---|
-| `<%@ include file="x.jspf" %>` / Tiles insert | inline fragment | child component `<X/>` | one fragment → one component; keep the same DOM nesting |
+| `<%@ include file="x.jspf" %>` / Tiles insert | inline fragment | child component `<X/>` | one fragment → one component, same content order (don't copy legacy layout-table nesting — the gate checks content, not markup shape) |
 | `<c:if test>` / `<% if %>` scriptlet | conditional region | `{cond && <…/>}` / ternary | drive from fixture/state, never invent the branch |
 | `<c:forEach items>` / JSP loop | repeated rows | `items.map(...)` | same element shape per row |
 | Struts `<html:form action="x.do">` + ActionForm | `<form>` POST | controlled `<form onSubmit>` → POST same `x.do` | keep field `name`s identical (they're the contract) |

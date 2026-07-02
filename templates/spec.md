@@ -108,7 +108,9 @@ split/sub-entity · selected period/filter · entitlements/authorization · lega
   - [ ] built from source-model (+ backend-model, FULL) + theme tokens — not from the image
   - [ ] legacy + React captures `usable:true`, NOT quarantined
   - [ ] data present and correct: frontend parity-verify data-presence ok; (FULL) verify_contract vs HAR PASS
-  - [ ] parity-verify PASS — record: 0 critical deltas + pixel ≤ threshold; live: 0 critical deltas + style match
+  - [ ] parity-verify PASS — record: 0 critical (content) deltas + pixel ≤ threshold; live: 0 critical
+        (content) deltas + style match. (Nesting-only deltas — same content, different markup grouping —
+        are advisory and do not block.)
   - [ ] copy/labels/validation exact; field order, tab order, table columns exact
   - [ ] (FULL) endpoint reproduces legacy fields/values (record) or structure (live); session/state honored (§6)
 

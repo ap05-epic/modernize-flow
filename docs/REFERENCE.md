@@ -55,8 +55,8 @@ no-HTML-injection rule), `backend-data-modes.md` (record/live/api), `css-porting
 
 | Script | What it does | You'd touch it when… |
 |---|---|---|
-| `verify_screen.py` | **The frontend gate.** DOM-structure diff + data-presence + pixel diff vs the captured oracle → pass/fail + a punch-list | the gate policy changes |
-| `dom_diff.py` | The structural lane: compares the two normalized `model.json` files | a delta type is noisy/missed |
+| `verify_screen.py` | **The frontend gate.** DOM-content diff + data-presence + pixel diff vs the captured oracle → pass/fail + a punch-list. Content deltas gate; nesting-only deltas (same content, different markup grouping) are advisory (`--strict-nesting` gates them) | the gate policy changes |
+| `dom_diff.py` | The structural lane: compares the two normalized `model.json` files and classifies each delta content vs nesting | a delta type is noisy/missed |
 | `pixel_diff.js` | The pixel lane (pixelmatch + pngjs; `install.sh` runs `npm install` here) | pixel thresholds/report change |
 
 Reference: `parity-thresholds.md` (what ratios mean; when a big number is a capture problem, not a bug).
