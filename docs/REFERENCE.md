@@ -1,8 +1,9 @@
 # Reference — every file in this repo, on one page
 
 The maintainer's map. Reading order for a new team member: [README](../README.md) (what this is) →
-[HOW-IT-WORKS](HOW-IT-WORKS.md) (plain-English concepts) → [SETUP](../SETUP.md) (install + run + the
-Copilot prompts) → this page (what each file does when you need to change something).
+[HOW-IT-WORKS](HOW-IT-WORKS.md) (plain-English concepts) → [SETUP](../SETUP.md) (install + run) →
+[PROMPTS](PROMPTS.md) (what to type into Copilot) → this page (what each file does when you need to
+change something).
 
 **The pipeline every screen goes through, and which script does each step:**
 

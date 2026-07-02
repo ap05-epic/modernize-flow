@@ -130,7 +130,7 @@ Install once, choosing a mode (`bash install.sh full` or `frontend`), then tell 
 **`modernize-flow`** (or **`jsp2react`**) agent with just the **legacy URL, how to log in, and a `project.json`**.
 The agent sets up its own tracking file (status.md), extracts the theme, discovers every view, parses the source
 (and, full mode, the data layer), and captures everything — you don't configure screens by hand. Then run it
-repeatedly (one slice per turn). The exact prompts are in [SETUP.md §6b](../SETUP.md). A generated `INDEX.html`
+repeatedly (one slice per turn). The exact prompts are in [docs/PROMPTS.md](PROMPTS.md). A generated `INDEX.html`
 plus a side‑by‑side review page let you and your colleagues compare originals against the replicas, view by view.
 
 > Not sure full‑stack will work out? Start in **frontend mode** (React only, talking to the existing backend) —

@@ -12,8 +12,9 @@ It is **generic** (any legacy app via `project.json`) and **source‑driven** �
 JSP/AJAX/CSS/Java source; the running screen is the verification target (not a screenshot the AI guesses from).
 
 **The docs, in reading order:** [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) — the whole system in plain
-English (start here; use it to explain it to others) · [SETUP.md](SETUP.md) — install, first run, and the
-exact Copilot prompts · [docs/REFERENCE.md](docs/REFERENCE.md) — every script on one page (the maintainer's map).
+English (start here; use it to explain it to others) · [SETUP.md](SETUP.md) — install + first run ·
+[docs/PROMPTS.md](docs/PROMPTS.md) — the copy-paste Copilot prompt playbook ·
+[docs/REFERENCE.md](docs/REFERENCE.md) — every script on one page (the maintainer's map).
 
 ## Two modes (pick at install time)
 
@@ -36,7 +37,7 @@ from `~/.copilot`, then installs exactly the chosen mode's set — so the pod is
 touches files this toolkit owns; the update routine is just `git pull && bash install.sh full`. (Plain‑English
 walk‑through: [HOW‑IT‑WORKS § What `bash install.sh` actually does](docs/HOW-IT-WORKS.md#what-bash-installsh-actually-does).) Then in Copilot, run the **`modernize-flow`** (or **`jsp2react`**) agent and give
 it the **legacy URL + how to log in + a `project.json`** — it bootstraps `status.md` itself and works one
-control/slice at a time (exact prompts in [SETUP.md §6b](SETUP.md)). Prereqs the installer checks: Node.js,
+control/slice at a time (exact prompts in [docs/PROMPTS.md](docs/PROMPTS.md)). Prereqs the installer checks: Node.js,
 Python 3 + Playwright (full mode also checks for a JDK + Maven/Gradle).
 
 **Revert:** the v2 frontend‑only system is tagged `v2.0-frontend-only` (and branch `v2-backup`) — restore with
@@ -88,6 +89,7 @@ jsp2react/
 ├── README.md            ← you are here
 ├── SETUP.md             ← detailed stand-up + the Copilot prompts (read this next)
 ├── docs/HOW-IT-WORKS.md ← plain-English explainer (use this to understand it / show colleagues)
+├── docs/PROMPTS.md      ← copy-paste Copilot prompts (lifecycle, scenarios, anti-patterns)
 ├── docs/REFERENCE.md    ← every script on one page (the maintainer's map)
 ├── agents/              ← modernize-flow.agent.md (full) · jsp2react.agent.md (frontend fallback)
 ├── skills/              ← legacy-crawl-capture · react-replica-kit · parity-verify · springboot-target-kit

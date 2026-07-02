@@ -99,4 +99,4 @@ echo "  python $SKILLS_DST/legacy-crawl-capture/scripts/extract_jsp.py --self-ch
 echo "  python $SKILLS_DST/react-replica-kit/scripts/extract_theme.py --self-check   # theme extractor"
 [ "$MODE" = "full" ] && echo "  python $SKILLS_DST/springboot-target-kit/scripts/extract_backend.py --self-check  # stored-proc extractor"
 echo "  In Copilot: run the **$( [ "$MODE" = "full" ] && echo modernize-flow || echo jsp2react )** agent with just the legacy URL + how to log in (+ a project.json)."
-echo "  It bootstraps status.md itself (no hand-editing). Prompts: SETUP.md §6b."
+echo "  It bootstraps status.md itself (no hand-editing). Prompts: docs/PROMPTS.md."

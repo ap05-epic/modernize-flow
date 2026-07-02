@@ -18,7 +18,7 @@ jsp2react/
 ├── install.sh                    # clean install, MODE = full | frontend
 ├── README.md
 ├── SETUP.md
-├── docs/{HOW-IT-WORKS.md, REFERENCE.md}   # plain-English explainer · per-script map
+├── docs/{HOW-IT-WORKS.md, PROMPTS.md, REFERENCE.md}   # plain-English explainer · prompt playbook · per-script map
 ├── agents/
 │   ├── modernize-flow.agent.md   # FULL: React + Spring Boot
 │   └── jsp2react.agent.md        # FRONTEND fallback: React only
@@ -106,11 +106,12 @@ Two config surfaces, **both created by the agent — you do not hand-fill either
 
 ## 6. First‑run smoke test — OPTIONAL manual wiring check (one flow, by hand)
 
-Proves the pipeline works on the pod *before* you trust the agent with a full sweep. The autonomous run is §6b.
+Proves the pipeline works on the pod *before* you trust the agent with a full sweep. The autonomous run
+prompts are in [docs/PROMPTS.md](docs/PROMPTS.md) (§6b).
 
 ```bash
 S=~/.copilot/skills ; P=work/project.json
-# 0a. bootstrap project.json from the URL + source (the agent does this itself in §6b; here you do it by hand)
+# 0a. bootstrap project.json from the URL + source (the agent does this itself in the real run; here by hand)
 python3 $S/legacy-crawl-capture/scripts/init_project.py --url <legacy login URL> \
   --webapp-dir <webapp> --source-dir <java/resources root> --out $P     # then complete any "_todo" items
 # 0b. sanity: every script answers --self-check without a browser
@@ -185,39 +186,11 @@ python3 $S/react-replica-kit/scripts/serve_review.py --work-dir work/evidence --
 
 ## 6b. What to type into Copilot (after `install.sh <mode>`)
 
-Copilot auto-discovers the skills; invoke the agent by name. Use **`modernize-flow`** (full) or **`jsp2react`**
-(frontend) — match the mode you installed.
-
-**Step A — sanity check (no crawling):**
-> "Read jsp2react/SETUP.md and README.md. Confirm the skills are under ~/.copilot/skills and the **<modernize-flow |
-> jsp2react>** agent is discoverable, then run the §6 self‑checks (`--self-check`) and report results. Don't crawl yet."
-
-**Step B — analyze (run once; builds the source‑driven contract for ALL flows). You give only URL + login + source:**
-> "Use the **<modernize-flow | jsp2react>** agent. Legacy URL = `<…>`. Log in via webapp-snapshot/save_auth_state.py
-> (creds/auth_state at `<…>`). Legacy source at `<…>`. **Bootstrap `project.json` yourself with init_project.py**
-> (derive context root, login action/fields, families, db.sqlmapDir; complete any `_todo`), then **bootstrap
-> status.md yourself**, then: run pre‑capture triage; **extract the theme**;
-> **discover every view including AJAX** (crawl_screens --emit-viewgraph + crawl_ajax from the start → viewgraph.json
-> — never open deep links directly); for each flow **parse its JSP → source-model.json**, capture evidence + the
-> **REAL responses** (--record-har; error pages auto‑quarantine — look around again)**, and (FULL mode) **trace the
-> data layer → backend-model.json** (extract_backend). Write spec.md + status.md + MANIFEST.json, then build_index →
-> evidence/INDEX.html. Begin with the login flow + one flow, then continue across all flows."
-
-**Step C — implement (run repeatedly; one control/slice per turn):**
-> "Use the **<modernize-flow | jsp2react>** agent. Read status.md and implement the next slice end to end: build it
-> 1:1 **from its source-model.json + theme tokens** (structure/labels/colors from source, screenshot only to verify);
-> **(FULL) scaffold the Spring Boot endpoint from backend-model.json and fill the ServiceImpl with the legacy business
-> logic + session binding**; wire **real data** for its data mode (record = HAR replay / live = proxy / api = the new
-> endpoint); render + capture with the same profile; run parity-verify --data-mode (**and verify_contract vs the HAR,
-> FULL**) and fix from the report until it PASSES; then update status.md + regenerate INDEX.html. Build the login
-> flow first. Do one slice, then show me its parity report (+ contract report) and side‑by‑side."
-
-Then: **"Continue with the next slice."** (repeat) — or, once you trust it,
-**"Implement all remaining slices, verifying each before moving on; stop and tell me about any blocker."**
-
-**Review:**
-> "Run react-replica-kit/scripts/serve_review.py against the work dir and the running React app so I can review
-> legacy vs React side by side."
+All the run prompts live in **[docs/PROMPTS.md](docs/PROMPTS.md)** — the copy-paste playbook. It has the
+three core lifecycle prompts (**A** sanity check → **B** analyze once → **C** implement slice by slice,
+then "Continue with the next slice."), the scenario prompts (entity-gated captures, wiring multi-screen
+user flows, fixing a failing gate, guardrailed batch runs, backend slices, blocker reports), the
+prompt-writing rules for Copilot CLI, and the anti-patterns that caused real failures. Start with A.
 
 ## 7. Assumptions to verify on the pod (correct as needed)
 
